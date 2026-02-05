@@ -1,0 +1,19 @@
+h1 Register 
+
+- if @error
+  p = @error
+
+form method="post" action="/register"
+  label for="username" Username 
+  input#username type="text" name=username 
+
+  label for="kingdom_name" Kingdom name
+  input#kingdom_name type="text" name="kingdom_name" required=true
+
+  label for="password" Password 
+  input#password type="password" name="password" required = true
+
+  button type="submit" Create account
+
+p  
+  a href="/login" Already have an account? log in
