@@ -4,6 +4,10 @@ require 'sqlite3'
 require 'sinatra/reloader'
 require 'bcrypt'
 require_relative './db/database'
+require_relative './config/game_balance'
+require_relative './routes/tutorial_routes'
+require_relative './routes/building_routes'
+require_relative './routes/unit_routes'
 
 configure do
   enable :sessions
@@ -19,6 +23,26 @@ helpers do
     return nil unless session[:user_id]
 
     @current_user ||= db.get_first_row('SELECT id, username FROM users WHERE id = ?', session[:user_id])
+  end
+
+  def require_login!
+    redirect '/login' unless current_user
+  end
+
+  def require_kingdom!
+    kingdom = db.get_first_row('SELECT * FROM kingdoms WHERE user_id = ?', current_user['id'])
+    redirect '/login' unless kingdom
+    kingdom
+  end 
+
+  def set_notice(message)
+    session[:notice] = message
+  end
+
+  def consume_notice
+    notice = session[:notice]
+    session[:notice] = nil
+    notice
   end
 end
 
@@ -95,12 +119,25 @@ post '/logout' do
 end
 
 get '/kingdom' do
-  redirect '/login' unless current_user
+  require_login!
+  kingdom = require_kingdom!
 
-  kingdom = db.get_first_row('SELECT * FROM kingdoms WHERE user_id = ?', current_user['id'])
-  redirect '/login' unless kingdom 
+  buildings = db.execute(
+    'SELECT name, level FROM buildings WHERE kingdom_id = ? ORDER BY name ASC',
+    [kingdom['id']]
+  )
 
-  slim :kingdom, locals: { kingdom: kingdom, user: current_user }
+  units = db.execute(
+    'SELECT unit_type, quantity FROM units WHERE kingdom_id = ? ORDER BY unit_type ASC', 
+    [kingdom['id']]
+  )
+
+
+  slim :kingdom, locals: { 
+   kingdom: kingdom, 
+   user: current_user,
+   buildings: buildings,
+   units: units,
+   notice: consume_notice
+  }
 end
-
-require_relative './routes/tutorial_routes'

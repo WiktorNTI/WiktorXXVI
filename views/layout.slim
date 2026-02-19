@@ -1,8 +1,14 @@
-doctype html 
-html 
-    head 
-        meta charset="utf-8"
-        meta name="viewport" content="width=device-width, initial-scale=1"
-        title Kingdom of Legends 
-    body 
-        == yield
+doctype html
+html
+  head
+    meta charset="utf-8"
+    meta name="viewport" content="width=device-width, initial-scale=1"
+    title League of Kingdoms
+    link rel="stylesheet" href="/styles.css"
+  body
+    header.topbar
+      .container
+        h1.brand League of Kingdoms
+
+    main.container
+      == yield

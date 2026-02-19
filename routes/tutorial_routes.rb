@@ -54,16 +54,15 @@ helpers do
 end
 
 get '/tutorial/start' do
-  redirect '/login' unless current_user
+  require_login!
   slim :tutorial_start
 end
 
 post '/tutorial/choice' do
-  redirect '/login' unless current_user
+  require_login!
 
   choice = params[:choice].to_s
-  kingdom = db.get_first_row('SELECT id FROM kingdoms WHERE user_id = ?', current_user['id'])
-  redirect '/login' unless kingdom
+  kingdom = require_kingdom!
 
   if choice == 'yes'
     db.execute(
@@ -82,10 +81,8 @@ post '/tutorial/choice' do
 end
 
 get '/tutorial' do
-  redirect '/login' unless current_user
-
-  kingdom = db.get_first_row('SELECT id, name, tutorial_mode, tutorial_step FROM kingdoms WHERE user_id = ?', current_user['id'])
-  redirect '/kingdom' unless kingdom
+  require_login!
+  kingdom = require_kingdom!
   redirect '/kingdom' unless kingdom['tutorial_mode'] == 'guided'
 
   step = kingdom['tutorial_step'].to_i
@@ -109,10 +106,8 @@ get '/tutorial' do
 end
 
 post '/tutorial/next' do
-  redirect '/login' unless current_user
-
-  kingdom = db.get_first_row('SELECT id, tutorial_mode, tutorial_step FROM kingdoms WHERE user_id = ?', current_user['id'])
-  redirect '/kingdom' unless kingdom
+  require_login!
+  kingdom = require_kingdom!
   redirect '/kingdom' unless kingdom['tutorial_mode'] == 'guided'
 
   step = kingdom['tutorial_step'].to_i

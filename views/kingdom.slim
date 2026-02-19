@@ -1,7 +1,39 @@
-h1 = "#{kingdom['name']}"
+.card
+  h1 = kingdom['name']
+  p = "Ruler: #{user['username']}"
+  - if notice
+  .card
+    p = notice
 
-p = "Ruler: #{user['username']}"
-p = "Wood: #{kingdom['wood']}"
-p = "Stone: #{kingdom['stone']}"
-p = "Food: #{kingdom['food']}"
-p = "Gold: #{kingdom['gold']}"
+.card
+  h2 Resources
+  ul
+    li = "Wood: #{kingdom['wood']}"
+    li = "Stone: #{kingdom['stone']}"
+    li = "Food: #{kingdom['food']}"
+    li = "Gold: #{kingdom['gold']}"
+
+.card
+h2 Buildings
+- if buildings.empty?
+  p No buildings yet.
+- else
+  ul
+    - buildings.each do |building|
+      - next_level = building['level'] + 1
+      - cost = building_upgrade_cost(building['name'], next_level)
+      li
+        = "#{building['name']} (Level #{building['level']})"
+        |  -> Upgrade cost:
+        = " W #{cost['wood']}, S #{cost['stone']}, F #{cost['food']}, G #{cost['gold']}"
+        form method="post" action="/buildings/#{building['name']}/upgrade" style="display:inline; margin-left:10px;"
+          button type="submit" Upgrade
+
+.card
+  h2 Units
+  - if units.empty?
+    p No units yet.
+  - else
+    ul
+      - units.each do |unit|
+        li = "#{unit['unit_type']}: #{unit['quantity']}"
