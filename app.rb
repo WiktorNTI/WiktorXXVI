@@ -4,52 +4,21 @@ require 'sqlite3'
 require 'sinatra/reloader'
 require 'bcrypt'
 require_relative './db/database'
-require_relative './routes/tutorial_routes'
 
 configure do
-    enable :sessions
-    set :session_secret, ENV.fetch('SESSION_SECRET', 'Temporary')
+  enable :sessions
+  set :session_secret, ENV.fetch('SESSION_SECRET', '68764546578877666777766677656787654567654567654323456789876543456789876543345676787654345678765434567876543456')
 end
 
 helpers do
   def db
-      Database.connection
+    Database.connection
   end
 
   def current_user
     return nil unless session[:user_id]
+
     @current_user ||= db.get_first_row('SELECT id, username FROM users WHERE id = ?', session[:user_id])
-  end
-
-  def create_default_kingdom_for(user_id, username)
-    db.execute(
-      'INSERT INTO kingdoms (user_id, name, wood, stone, food, gold, last_tick_at) VALUES(?, ?, 120, 120, 120, 120, ?)',
-      user_id,
-      "#{username}'s Kingdom",
-      Time.now.to_i
-    )
-
-    kingdom_id = db.last_insert_row_id
-  end
-
-  def grant_starter_pack!(kingdom_id)
-    db.execute(
-      'UPDATE kingdoms SET wood = 120, stone = 120, food = 120, gold = 120 WHERE id = ?',
-      kingdom_id
-    )
-
-    ['Town Hall', 'Farm', 'Barracks'].each do |name|
-      db.execute(
-        'INSERT OR IGNORE INTO buildings (kingdom_id, name, level) VALUES (?, ?, 1)',
-        kingdom_id, name
-      )
-    end
-
-     ['Spearman', 'Archer', 'Cavalry'].each do |unit|
-    db.execute(
-      'INSERT OR IGNORE INTO units (kingdom_id, unit_type, quantity) VALUES (?, ?, 0)',
-      kingdom_id, unit
-    )
   end
 end
 
@@ -67,28 +36,27 @@ post '/register' do
   password = params[:password].to_s
 
   if username.length < 3
-    @error = 'Username must be at least 3 Characters.'
+    @error = 'Username must be at least 3 characters.'
     return slim :register
   elsif kingdom_name.length < 3
     @error = 'Kingdom name must be at least 3 characters.'
     return slim :register
   elsif password.length < 5 || password !~ /\A(?=.*[A-Za-z])(?=.*\d).+\z/
-    @error = 'Password must be atleast 5 Characters and must include at least one number and one letter'
+    @error = 'Password must be at least 5 characters and include at least one number and one letter.'
     return slim :register
   end
-
 
   password_hash = BCrypt::Password.create(password).to_s
   db.execute(
     'INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)',
-    username, password_hash, Time.now.to_i
+    [username, password_hash, Time.now.to_i]
   )
 
   user_id = db.last_insert_row_id
 
   db.execute(
     'INSERT INTO kingdoms (user_id, name, wood, stone, food, gold, last_tick_at, tutorial_mode, tutorial_step) VALUES (?, ?, 0, 0, 0, 0, ?, ?, ?)',
-    user_id, kingdom_name, Time.now.to_i, 'pending', 0
+    [user_id, kingdom_name, Time.now.to_i, 'pending', 0]
   )
 
   redirect '/login'
@@ -111,17 +79,15 @@ post '/login' do
 
     kingdom = db.get_first_row('SELECT tutorial_mode FROM kingdoms WHERE user_id = ?', user['id'])
     if kingdom && kingdom['tutorial_mode'] == 'pending'
-     redirect '/tutorial/start'
+      redirect '/tutorial/start'
     else
       redirect '/kingdom'
     end
   else
-    @error = '🥀?'
+    @error = 'Invalid username or password.'
     slim :login
   end
 end
-
-
 
 post '/logout' do
   session.clear
@@ -130,5 +96,11 @@ end
 
 get '/kingdom' do
   redirect '/login' unless current_user
-  "Welcome back!, #{current_user['username']}! Kingdom page next."
+
+  kingdom = db.get_first_row('SELECT * FROM kingdoms WHERE user_id = ?', current_user['id'])
+  redirect '/login' unless kingdom 
+
+  slim :kingdom, locals: { kingdom: kingdom, user: current_user }
 end
+
+require_relative './routes/tutorial_routes'

@@ -5,13 +5,13 @@ h1 Register
 
 form method="post" action="/register"
   label for="username" Username 
-  input#username type="text" name=username 
+  input#username type="text" name="username" required=true
 
   label for="kingdom_name" Kingdom name
   input#kingdom_name type="text" name="kingdom_name" required=true
 
   label for="password" Password 
-  input#password type="password" name="password" required = true
+  input#password type="password" name="password" required=true
 
   button type="submit" Create account
 
