@@ -8,6 +8,7 @@ require_relative './config/game_balance'
 require_relative './routes/tutorial_routes'
 require_relative './routes/building_routes'
 require_relative './routes/unit_routes'
+require_relative './services/resource_generation'
 
 configure do
   enable :sessions
@@ -45,6 +46,16 @@ helpers do
     notice
   end
 end
+
+before do
+  next unless current_user
+
+  kingdom = db.get_first_row('SELECT id FROM kingdoms WHERE user_id = ?', current_user['id'])
+  next unless kingdom
+
+  ResourceGeneration.sync!(db, kingdom['id'])
+end
+
 
 get '/' do
   slim :home
