@@ -138,6 +138,7 @@ get '/kingdom' do
    user: current_user,
    buildings: buildings,
    units: units,
-   notice: consume_notice
+   notice: consume_notice,
+   unit_data_map: UNIT_DATA
   }
 end

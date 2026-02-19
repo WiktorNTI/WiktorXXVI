@@ -1,7 +1,8 @@
 .card
   h1 = kingdom['name']
   p = "Ruler: #{user['username']}"
-  - if notice
+
+- if notice
   .card
     p = notice
 
@@ -14,20 +15,20 @@
     li = "Gold: #{kingdom['gold']}"
 
 .card
-h2 Buildings
-- if buildings.empty?
-  p No buildings yet.
-- else
-  ul
-    - buildings.each do |building|
-      - next_level = building['level'] + 1
-      - cost = building_upgrade_cost(building['name'], next_level)
-      li
-        = "#{building['name']} (Level #{building['level']})"
-        |  -> Upgrade cost:
-        = " W #{cost['wood']}, S #{cost['stone']}, F #{cost['food']}, G #{cost['gold']}"
-        form method="post" action="/buildings/#{building['name']}/upgrade" style="display:inline; margin-left:10px;"
-          button type="submit" Upgrade
+  h2 Buildings
+  - if buildings.empty?
+    p No buildings yet.
+  - else
+    ul
+      - buildings.each do |building|
+        - next_level = building['level'] + 1
+        - cost = building_upgrade_cost(building['name'], next_level)
+        li
+          = "#{building['name']} (Level #{building['level']})"
+          |  -> Upgrade cost:
+          = " W #{cost['wood']}, S #{cost['stone']}, F #{cost['food']}, G #{cost['gold']}"
+          form method="post" action="/buildings/#{building['name']}/upgrade" style="display:inline; margin-left:10px;"
+            button type="submit" Upgrade
 
 .card
   h2 Units
@@ -36,4 +37,10 @@ h2 Buildings
   - else
     ul
       - units.each do |unit|
-        li = "#{unit['unit_type']}: #{unit['quantity']}"
+        - unit_data = unit_data_map[unit['unit_type']]
+        li
+          = "#{unit['unit_type']}: #{unit['quantity']}"
+          - if unit_data
+            |  (Cost: Food #{unit_data['food']}, Gold #{unit_data['gold']}, Barracks #{unit_data['required_barracks']}+)
+          form method="post" action="/train/#{unit['unit_type']}" style="display:inline; margin-left:10px;"
+            button type="submit" Train 1
