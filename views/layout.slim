@@ -7,8 +7,12 @@ html
     link rel="stylesheet" href="/styles.css"
   body
     header.topbar
-      .container
-        h1.brand League of Kingdoms
+  .container
+    h1.brand League of Kingdoms 
+    - if current_user
+      a href="/map" Map
+
+
 
     main.container
       == yield

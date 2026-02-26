@@ -1,0 +1,21 @@
+h1 World Map
+p = "#{kingdom['name']} | Center: (#{cx}, #{cy})"
+
+.world-grid
+  - (min_y..max_y).each do |y|
+    - (min_x..max_x).each do |x|
+      - tile = tile_map[[x, y]]
+      - if visible[[x, y]] && tile
+        - klass = "tile #{tile['biome']}"
+      - elsif explored[[x, y]] && tile
+        - klass = "tile #{tile['biome']} dim"
+      - else
+        - klass = "tile fog"
+
+      - if visible[[x, y]]
+        form.map-tile-form method="post" action="/map/center"
+          input type="hidden" name="x" value=x
+          input type="hidden" name="y" value=y
+          button class=klass type="submit" title="Center on (#{x}, #{y})"
+      - else
+        . class=klass

@@ -168,8 +168,80 @@ get '/kingdom' do
    units: units,
    notice: consume_notice,
    unit_data_map: UNIT_DATA,
-   rates: rates,
    rates_per_hour: rates_per_hour,
    rate_tooltips: rate_tooltips
   }
 end
+
+get '/map' do
+  require_login!
+  kingdom = require_kingdom!
+
+  city = db.get_first_row('SELECT * FROM world_cities WHERE kingdom_id = ? ORDER BY id LIMIT 1', [kingdom['id']])
+  unless city
+    db.execute(
+      'INSERT INTO world_cities (kingdom_id, name, tile_x, tile_y, vision_radius) VALUES (?, ?, ?, ?, ?)',
+      [kingdom['id'], "#{kingdom['name']} Capital", 40, 40, 3]
+    )
+    city = db.get_first_row('SELECT * FROM world_cities WHERE kingdom_id = ? ORDER BY id LIMIT 1', [kingdom['id']])
+  end
+
+  cx = (params[:cx] || city['tile_x']).to_i
+  cy = (params[:cy] || city['tile_y']).to_i
+  half = 10
+  min_x, max_x = cx - half, cx + half
+  min_y, max_y = cy - half, cy + half
+
+  tiles = db.execute(
+    'SELECT x, y, biome FROM map_tiles WHERE x BETWEEN ? AND ? AND y BETWEEN ? AND ?',
+    [min_x, max_x, min_y, max_y]
+  )
+  tile_map = {}
+  tiles.each { |t| tile_map[[t['x'], t['y']]] = t }
+
+  cities = db.execute(
+    'SELECT id, name, tile_x, tile_y, vision_radius FROM world_cities WHERE kingdom_id = ?',
+    [kingdom['id']]
+  )
+
+  visible = {}
+  (min_y..max_y).each do |y|
+    (min_x..max_x).each do |x|
+      visible[[x, y]] = cities.any? do |c|
+        (x - c['tile_x']).abs <= c['vision_radius'] && (y - c['tile_y']).abs <= c['vision_radius']
+      end
+    end
+  end
+
+  visible.keys.each do |pos|
+    x, y = pos
+    next unless visible[[x, y]]
+
+    db.execute(
+      'INSERT OR IGNORE INTO explored_tiles (kingdom_id, x, y) VALUES (?, ?, ?)',
+      [kingdom['id'], x, y]
+    )
+  end
+
+  explored_rows = db.execute(
+    'SELECT x, y FROM explored_tiles WHERE kingdom_id = ? AND x BETWEEN ? AND ? AND y BETWEEN ? AND ?',
+    [kingdom['id'], min_x, max_x, min_y, max_y]
+  )
+  explored = {}
+  explored_rows.each { |r| explored[[r['x'], r['y']]] = true }
+
+
+  slim :map, locals: {
+    kingdom: kingdom, cx: cx, cy: cy,
+    min_x: min_x, max_x: max_x, min_y: min_y, max_y: max_y,
+    tile_map: tile_map, visible: visible, explored: explored, cities: cities
+  }
+end
+
+post '/map/center' do
+  require_login!
+  x = params[:x].to_i
+  y = params[:y].to_i
+  redirect "/map?cx=#{x}&cy=#{y}"
+end
+

@@ -1,6 +1,9 @@
 .card
   h1 = kingdom['name']
   p = "Ruler: #{user['username']}"
+  form method="post" action="/logout"
+  button type="submit" Logout
+
 
 - if notice
   .card

@@ -45,4 +45,45 @@ CREATE TABLE IF NOT EXISTS kingdoms (
   );
 SQL
 
+db.execute_batch <<~SQL
+  CREATE TABLE IF NOT EXISTS map_tiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    biome TEXT NOT NULL,
+    UNIQUE(x, y)
+  );
+
+  CREATE TABLE IF NOT EXISTS world_cities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kingdom_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    tile_x INTEGER NOT NULL,
+    tile_y INTEGER NOT NULL,
+    vision_radius INTEGER NOT NULL DEFAULT 3,
+    FOREIGN KEY(kingdom_id) REFERENCES kingdoms(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS explored_tiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kingdom_id INTEGER NOT NULL,
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    UNIQUE(kingdom_id, x, y),
+    FOREIGN KEY(kingdom_id) REFERENCES kingdoms(id)
+  );
+SQL
+
+count = db.get_first_value('SELECT COUNT(*) FROM map_tiles').to_i
+if count == 0
+  biomes = %w[grassland forest mountain desert]
+  80.times do |y|
+    80.times do |x|
+      biome = biomes.sample
+      db.execute('INSERT INTO map_tiles (x, y, biome) VALUES (?, ?, ?)', [x, y, biome])
+    end
+  end
+end
+
+
 puts 'Database setup complete.'

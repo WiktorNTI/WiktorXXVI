@@ -6,12 +6,13 @@ helpers do
   end
 
   def grant_starter_pack!(kingdom_id)
+    start = ECONOMY[:start_resources]
     db.execute(
-      'UPDATE kingdoms SET wood = 120, stone = 120, food = 120, gold = 120 WHERE id = ?',
-      [kingdom_id]
+      'UPDATE kingdoms SET wood = ?, stone = ?, food = ?, gold = ? WHERE id = ?',
+      [start['wood'], start['stone'], start['food'], start['gold'], kingdom_id]
     )
 
-    ['Town Hall', 'Farm', 'Barracks'].each do |name|
+    BUILDING_ORDER.each do |name|
       db.execute(
         'INSERT OR IGNORE INTO buildings (kingdom_id, name, level) VALUES (?, ?, 1)',
         [kingdom_id, name]
@@ -41,9 +42,19 @@ helpers do
     when 3
       db.execute(
         'INSERT OR IGNORE INTO buildings (kingdom_id, name, level) VALUES (?, ?, 1)',
-        [kingdom_id, 'Barracks']
+        [kingdom_id, 'Lumberyard']
       )
     when 4
+      db.execute(
+        'INSERT OR IGNORE INTO buildings (kingdom_id, name, level) VALUES (?, ?, 1)',
+        [kingdom_id, 'Quarry']
+      )
+    when 5
+      db.execute(
+        'INSERT OR IGNORE INTO buildings (kingdom_id, name, level) VALUES (?, ?, 1)',
+        [kingdom_id, 'Barracks']
+      )
+    when 6
       grant_starter_pack!(kingdom_id)
       db.execute(
         'UPDATE units SET quantity = quantity + 10 WHERE kingdom_id = ? AND unit_type = ?',
@@ -93,10 +104,12 @@ get '/tutorial' do
                   when 2
                     'Excellent choice. Every great city needs leadership. Build your Town Hall to establish control and begin developing your kingdom.'
                   when 3
-                    'Your people are gathering. To feed them, you need production. Build a Farm so your city can generate food for growth and future troops.'
+                    'Your city needs wood production. Build a Lumberyard to improve wood income.'
                   when 4
-                    'Your city is taking shape. Now build a Barracks to train soldiers and protect your lands from future threats.'
+                    'Now strengthen stone production. Build a Quarry to increase stone income.'
                   when 5
+                    'Your city is taking shape. Build a Barracks to unlock military training.'
+                  when 6
                     'Tutorial complete. Your City Level 1 foundation is ready. You now receive starter resources and beginner troops so you can begin expanding.'
                   else
                     "You are now the ruler of #{kingdom['name']}. Continue building, upgrading, and growing your empire."
@@ -113,7 +126,7 @@ post '/tutorial/next' do
   step = kingdom['tutorial_step'].to_i
   apply_tutorial_step!(kingdom['id'], step)
 
-  if step >= 5
+  if step >= 6
     db.execute(
       'UPDATE kingdoms SET tutorial_mode = ?, tutorial_step = ? WHERE id = ?',
       ['done', 0, kingdom['id']]

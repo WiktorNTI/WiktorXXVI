@@ -25,22 +25,34 @@ module ResourceGeneration
   end
 
   def production_rates(db, kingdom_id)
+    kingdom = db.get_first_row(
+      'SELECT population, tax_rate FROM kingdoms WHERE id = ?',
+      [kingdom_id]
+    )
+
     rows = db.execute('SELECT name, level FROM buildings WHERE kingdom_id = ?', [kingdom_id])
     levels = rows.each_with_object({}) { |row, memo| memo[row['name']] = row['level'] }
 
-   town_hall = levels.fetch('Town Hall', 0)
+    lumberyard = levels.fetch('Lumberyard', 0)
+    quarry = levels.fetch('Quarry', 0)
     farm = levels.fetch('Farm', 0)
 
-   base = ECONOMY[:base_per_minute]
-   hall_bonus = ECONOMY[:town_hall_bonus]
-    farm_bonus = ECONOMY[:farm_food_bonus]
+    base = ECONOMY[:base_per_minute]
 
-   {
-     'wood' => base['wood'] + (hall_bonus['wood'] * town_hall),
-     'stone' => base['stone'] + (hall_bonus['stone'] * town_hall),
-     'food' => base['food'] + (farm_bonus * farm),
-     'gold' => base['gold'] + (hall_bonus['gold'] * town_hall)
+    wood_rate = base['wood'] + (lumberyard * ECONOMY[:lumberyard_wood_bonus])
+    stone_rate = base['stone'] + (quarry * ECONOMY[:quarry_stone_bonus])
+    food_rate = base['food'] + (farm * ECONOMY[:farm_food_bonus])
+
+    population = kingdom ? kingdom['population'].to_i : 0
+    tax_rate = kingdom ? kingdom['tax_rate'].to_i : 0
+    tax_gold_rate = (population * tax_rate) / ECONOMY[:tax_divisor]
+    gold_rate = base['gold'] + tax_gold_rate
+
+    {
+      'wood' => wood_rate,
+      'stone' => stone_rate,
+      'food' => food_rate,
+      'gold' => gold_rate
     }
-end
-
+  end
 end
