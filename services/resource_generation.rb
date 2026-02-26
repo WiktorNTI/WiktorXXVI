@@ -28,14 +28,19 @@ module ResourceGeneration
     rows = db.execute('SELECT name, level FROM buildings WHERE kingdom_id = ?', [kingdom_id])
     levels = rows.each_with_object({}) { |row, memo| memo[row['name']] = row['level'] }
 
-    town_hall = levels.fetch('Town Hall', 0)
+   town_hall = levels.fetch('Town Hall', 0)
     farm = levels.fetch('Farm', 0)
 
-    {
-      'wood' => 1 + town_hall,
-      'stone' => 1 + town_hall,
-      'food' => 1 + (farm * 2),
-      'gold' => 1 + (town_hall / 2)
+   base = ECONOMY[:base_per_minute]
+   hall_bonus = ECONOMY[:town_hall_bonus]
+    farm_bonus = ECONOMY[:farm_food_bonus]
+
+   {
+     'wood' => base['wood'] + (hall_bonus['wood'] * town_hall),
+     'stone' => base['stone'] + (hall_bonus['stone'] * town_hall),
+     'food' => base['food'] + (farm_bonus * farm),
+     'gold' => base['gold'] + (hall_bonus['gold'] * town_hall)
     }
-  end
+end
+
 end

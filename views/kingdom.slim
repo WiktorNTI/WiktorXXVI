@@ -9,10 +9,20 @@
 .card
   h2 Resources
   ul
-    li = "Wood: #{kingdom['wood']}"
-    li = "Stone: #{kingdom['stone']}"
-    li = "Food: #{kingdom['food']}"
-    li = "Gold: #{kingdom['gold']}"
+   li
+    | Wood: #{kingdom['wood']}
+    span.rate-inline title=rate_tooltips['wood'] = " (+#{rates_per_hour['wood']}/h)"
+   li
+    | Stone: #{kingdom['stone']}
+    span.rate-inline title=rate_tooltips['stone'] = " (+#{rates_per_hour['stone']}/h)"
+   li
+    | Food: #{kingdom['food']}
+    span.rate-inline title=rate_tooltips['food'] = " (+#{rates_per_hour['food']}/h)"
+   li
+    | Gold: #{kingdom['gold']}
+    span.rate-inline title=rate_tooltips['gold'] = " (+#{rates_per_hour['gold']}/h)"
+
+
 
 .card
   h2 Buildings

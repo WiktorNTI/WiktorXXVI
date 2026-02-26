@@ -56,6 +56,10 @@ before do
   ResourceGeneration.sync!(db, kingdom['id'])
 end
 
+after do
+  Database.close_connection
+end
+
 
 get '/' do
   slim :home
@@ -143,6 +147,19 @@ get '/kingdom' do
     [kingdom['id']]
   )
 
+  rates = ResourceGeneration.production_rates(db, kingdom['id'])
+
+  rates_per_hour = rates.transform_values { |v| v * 60 }
+
+  rate_tooltips = {
+    'wood' => "This city: Base 1 + Town Hall bonus",
+    'stone' => "This city: Base 1 + Town Hall bonus",
+    'food' => "This city: Base 1 + Farm bonus",
+    'gold' => "This city: Base 1 + Town Hall bonus"
+  }
+
+
+
 
   slim :kingdom, locals: { 
    kingdom: kingdom, 
@@ -150,6 +167,9 @@ get '/kingdom' do
    buildings: buildings,
    units: units,
    notice: consume_notice,
-   unit_data_map: UNIT_DATA
+   unit_data_map: UNIT_DATA,
+   rates: rates,
+   rates_per_hour: rates_per_hour,
+   rate_tooltips: rate_tooltips
   }
 end
