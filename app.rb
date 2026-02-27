@@ -152,10 +152,10 @@ get '/kingdom' do
   rates_per_hour = rates.transform_values { |v| v * 60 }
 
   rate_tooltips = {
-    'wood' => "This city: Base 1 + Town Hall bonus",
-    'stone' => "This city: Base 1 + Town Hall bonus",
+    'wood' => "This city: Base 1 + Lumberyard bonus",
+    'stone' => "This city: Base 1 + Quarry bonus",
     'food' => "This city: Base 1 + Farm bonus",
-    'gold' => "This city: Base 1 + Town Hall bonus"
+    'gold' => "This city: Base 1 + Tax"
   }
 
 
