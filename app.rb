@@ -12,7 +12,8 @@ require_relative './services/resource_generation'
 
 configure do
   enable :sessions
-  set :session_secret, ENV.fetch('SESSION_SECRET', '68764546578877666777766677656787654567654567654323456789876543456789876543345676787654345678765434567876543456')
+  set :session_secret, ENV.fetch('SESSION_SECRET', '67864546578877666777766677656787654567654567654323456789876543456789876543345676787654345678765434567876543456')
+  Database.ensure_schema!
 end
 
 helpers do
@@ -45,6 +46,42 @@ helpers do
     session[:notice] = nil
     notice
   end
+
+  def safe_return_path(raw_path, fallback = '/kingdom')
+    path = raw_path.to_s
+    return fallback if path.empty?
+    return fallback unless path.start_with?('/')
+    return fallback if path.start_with?('//')
+    path
+  end
+
+  def normalize_kingdom_resources!(kingdom_id)
+    db.execute(
+      'UPDATE kingdoms SET wood = CAST(ROUND(wood) AS INTEGER), stone = CAST(ROUND(stone) AS INTEGER), food = CAST(ROUND(food) AS INTEGER), gold = CAST(ROUND(gold) AS INTEGER) WHERE id = ?',
+      [kingdom_id]
+    )
+  end
+
+  def ensure_capital_city!(kingdom)
+    city = db.get_first_row('SELECT * FROM world_cities WHERE kingdom_id = ? ORDER BY id LIMIT 1', [kingdom['id']])
+    return city if city
+
+    capital_biome = kingdom['capital_biome'].to_s
+    capital_biome = 'grassland' unless CAPITAL_BIOME_BONUSES.key?(capital_biome)
+
+    spawn_tile = db.get_first_row(
+      'SELECT x, y FROM map_tiles WHERE biome = ? ORDER BY RANDOM() LIMIT 1',
+      [capital_biome]
+    )
+    spawn_x = spawn_tile ? spawn_tile['x'] : 40
+    spawn_y = spawn_tile ? spawn_tile['y'] : 40
+
+    db.execute(
+      'INSERT INTO world_cities (kingdom_id, name, tile_x, tile_y, vision_radius) VALUES (?, ?, ?, ?, ?)',
+      [kingdom['id'], "#{kingdom['name']} Capital", spawn_x, spawn_y, 3]
+    )
+    db.get_first_row('SELECT * FROM world_cities WHERE kingdom_id = ? ORDER BY id LIMIT 1', [kingdom['id']])
+  end
 end
 
 before do
@@ -54,6 +91,7 @@ before do
   next unless kingdom
 
   ResourceGeneration.sync!(db, kingdom['id'])
+  normalize_kingdom_resources!(kingdom['id'])
 end
 
 after do
@@ -137,16 +175,6 @@ get '/kingdom' do
   require_login!
   kingdom = require_kingdom!
 
-  buildings = db.execute(
-    'SELECT name, level FROM buildings WHERE kingdom_id = ? ORDER BY name ASC',
-    [kingdom['id']]
-  )
-
-  units = db.execute(
-    'SELECT unit_type, quantity FROM units WHERE kingdom_id = ? ORDER BY unit_type ASC', 
-    [kingdom['id']]
-  )
-
   rates = ResourceGeneration.production_rates(db, kingdom['id'])
 
   rates_per_hour = rates.transform_values { |v| v * 60 }
@@ -164,12 +192,10 @@ get '/kingdom' do
   slim :kingdom, locals: { 
    kingdom: kingdom, 
    user: current_user,
-   buildings: buildings,
-   units: units,
    notice: consume_notice,
-   unit_data_map: UNIT_DATA,
    rates_per_hour: rates_per_hour,
-   rate_tooltips: rate_tooltips
+   rate_tooltips: rate_tooltips,
+   capital_biome: kingdom['capital_biome'].to_s
   }
 end
 
@@ -177,14 +203,7 @@ get '/map' do
   require_login!
   kingdom = require_kingdom!
 
-  city = db.get_first_row('SELECT * FROM world_cities WHERE kingdom_id = ? ORDER BY id LIMIT 1', [kingdom['id']])
-  unless city
-    db.execute(
-      'INSERT INTO world_cities (kingdom_id, name, tile_x, tile_y, vision_radius) VALUES (?, ?, ?, ?, ?)',
-      [kingdom['id'], "#{kingdom['name']} Capital", 40, 40, 3]
-    )
-    city = db.get_first_row('SELECT * FROM world_cities WHERE kingdom_id = ? ORDER BY id LIMIT 1', [kingdom['id']])
-  end
+  city = ensure_capital_city!(kingdom)
 
   cx = (params[:cx] || city['tile_x']).to_i
   cy = (params[:cy] || city['tile_y']).to_i
@@ -234,7 +253,8 @@ get '/map' do
   slim :map, locals: {
     kingdom: kingdom, cx: cx, cy: cy,
     min_x: min_x, max_x: max_x, min_y: min_y, max_y: max_y,
-    tile_map: tile_map, visible: visible, explored: explored, cities: cities
+    tile_map: tile_map, visible: visible, explored: explored, cities: cities,
+    capital_biome: kingdom['capital_biome'].to_s
   }
 end
 
@@ -245,3 +265,71 @@ post '/map/center' do
   redirect "/map?cx=#{x}&cy=#{y}"
 end
 
+get '/city/:id' do
+  require_login!
+  kingdom = require_kingdom!
+  tutorial_completed_now = false
+
+  city = db.get_first_row(
+    'SELECT * FROM world_cities WHERE id = ? AND kingdom_id = ?',
+    [params[:id].to_i, kingdom['id']]
+  )
+  redirect '/map' unless city
+
+  buildings = db.execute(
+    'SELECT name, level FROM buildings WHERE kingdom_id = ? ORDER BY name ASC',
+    [kingdom['id']]
+  )
+
+  units = db.execute(
+    'SELECT unit_type, quantity FROM units WHERE kingdom_id = ? ORDER BY unit_type ASC',
+    [kingdom['id']]
+  )
+
+  rates = ResourceGeneration.production_rates(db, kingdom['id'])
+  rates_per_hour = rates.transform_values { |v| v * 60 }
+  tutorial_mode = kingdom['tutorial_mode'].to_s
+  tutorial_step = kingdom['tutorial_step'].to_i
+  tutorial_text = nil
+
+  if tutorial_mode == 'guided'
+    tutorial_step = guided_step_from_state(kingdom['id'])
+    if tutorial_step == 0
+      db.execute(
+        'UPDATE kingdoms SET tutorial_mode = ?, tutorial_step = ? WHERE id = ?',
+        ['done', 0, kingdom['id']]
+      )
+      tutorial_mode = 'done'
+      tutorial_completed_now = true
+    else
+      db.execute(
+        'UPDATE kingdoms SET tutorial_step = ? WHERE id = ?',
+        [tutorial_step, kingdom['id']]
+      )
+      tutorial_text = tutorial_step_text(kingdom['name'], tutorial_step)
+    end
+  end
+
+  rate_tooltips = {
+    'wood' => 'City production: Base 1 + Lumberyard bonus',
+    'stone' => 'City production: Base 1 + Quarry bonus',
+    'food' => 'City production: Base 1 + Farm bonus',
+    'gold' => 'City production: Base 1 + Tax'
+  }
+
+  slim :city, locals: {
+    kingdom: kingdom,
+    city: city,
+    user: current_user,
+    buildings: buildings,
+    units: units,
+    notice: consume_notice,
+    unit_data_map: UNIT_DATA,
+    rates_per_hour: rates_per_hour,
+    rate_tooltips: rate_tooltips,
+    tutorial_mode: tutorial_mode,
+    tutorial_step: tutorial_step,
+    tutorial_text: tutorial_text,
+    tutorial_completed_now: tutorial_completed_now
+  }
+end

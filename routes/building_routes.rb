@@ -1,7 +1,11 @@
 helpers do
-  def building_upgrade_cost(name, next_level)
+  def building_upgrade_cost(name, next_level, kingdom = nil)
     base = BUILDING_BASE_COSTS.fetch(name)
-    base.transform_values { |amount| amount * next_level }
+    cost = base.transform_values { |amount| amount * next_level }
+    return cost unless kingdom && kingdom['tutorial_mode'].to_s == 'guided'
+    return cost unless next_level == 1
+
+    cost.transform_values { |amount| [(amount / 20.0).ceil, 1].max }
   end
 
   def can_afford?(kingdom, cost)
@@ -23,11 +27,12 @@ end
 
 post '/buildings/:name/upgrade' do
   require_login!
+  redirect_to = safe_return_path(params[:return_to], '/kingdom')
 
   name = params[:name].to_s
   unless BUILDING_ORDER.include?(name)
     set_notice('Unknown building.')
-    redirect '/kingdom'
+    redirect redirect_to
   end
 
   kingdom = require_kingdom!
@@ -38,7 +43,7 @@ post '/buildings/:name/upgrade' do
   )
   unless building
   set_notice('Building not found.')
-  redirect '/kingdom'
+  redirect redirect_to
   end
 
   next_level = building['level'] + 1
@@ -52,15 +57,15 @@ post '/buildings/:name/upgrade' do
 
     if next_level > town_hall_level + 1
      set_notice('Upgrade Town Hall first.')
-     redirect '/kingdom'
+     redirect redirect_to
     end
   end
 
-  cost = building_upgrade_cost(name, next_level)
+  cost = building_upgrade_cost(name, next_level, kingdom)
 
   unless can_afford?(kingdom, cost)
     set_notice('Not enough resources.')
-    redirect '/kingdom'
+    redirect redirect_to
   end
 
   spend_resources!(kingdom['id'], kingdom, cost)
@@ -72,5 +77,5 @@ post '/buildings/:name/upgrade' do
 
   
   set_notice("#{name} upgraded to level #{next_level}.")
-  redirect '/kingdom'
+  redirect redirect_to
 end

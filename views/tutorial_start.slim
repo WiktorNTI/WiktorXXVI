@@ -1,6 +1,16 @@
 h1 First login setup
-p Do you want to play the tutorial?
+p Pick your capital biome first. This decides your permanent starting bonus.
+p Then choose guided tutorial or skip.
+p Guided tutorial starts buildings at Level 0 with very cheap tutorial costs.
+
+- if notice
+  p = notice
 
 form method="post" action="/tutorial/choice"
-  button type="submit" name="choice" value="yes" Yes, show tutorial
-  button type="submit" name="choice" value="no" No, skip tutorial
+  - CAPITAL_BIOME_ORDER.each do |biome|
+    label style="display:block; margin-bottom:6px;"
+      input type="radio" name="biome" value=biome required=true
+      = " #{biome_label(biome)} (#{biome_bonus_text(biome)})"
+
+  button type="submit" name="choice" value="yes" Guided tutorial
+  button type="submit" name="choice" value="no" Skip tutorial

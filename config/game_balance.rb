@@ -15,6 +15,17 @@ UNIT_DATA = {
   'Cavalry' => { 'food' => 70, 'gold' => 35, 'required_barracks' => 3 }
 }.freeze
 
+UNIT_ORDER = ['Spearman', 'Archer', 'Cavalry'].freeze
+
+CAPITAL_BIOME_ORDER = ['grassland', 'forest', 'mountain', 'desert'].freeze
+
+CAPITAL_BIOME_BONUSES = {
+  'grassland' => { 'food' => 5 },
+  'forest' => { 'wood' => 5 },
+  'mountain' => { 'stone' => 5 },
+  'desert' => { 'gold' => 5 }
+}.freeze
+
 ECONOMY = {
   start_resources: { 'wood' => 180, 'stone' => 180, 'food' => 180, 'gold' => 120 },
   base_per_minute: { 'wood' => 1, 'stone' => 1, 'food' => 1, 'gold' => 1 },

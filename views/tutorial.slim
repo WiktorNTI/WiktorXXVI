@@ -2,5 +2,21 @@ h1 Tutorial
 p Step #{step}
 p = tutorial_text
 
+- if notice
+  p = notice
+
+- if step == 1
+  h2 Choose capital biome
+  p Current selection:
+  - if selected_biome.to_s.empty?
+    | None
+  - else
+    = "#{biome_label(selected_biome)} (#{biome_bonus_text(selected_biome)})"
+
+  - CAPITAL_BIOME_ORDER.each do |biome|
+    form method="post" action="/tutorial/capital" style="margin-bottom:8px;"
+      input type="hidden" name="biome" value=biome
+      button type="submit" = "#{biome_label(biome)} (#{biome_bonus_text(biome)})"
+
 form method="post" action="/tutorial/next"
-  button type="submit" Next step
+  button type="submit" = next_label

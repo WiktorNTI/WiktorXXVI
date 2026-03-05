@@ -1,10 +1,24 @@
+helpers do
+  def unit_training_cost(unit_data, kingdom = nil)
+    food_cost = unit_data['food']
+    gold_cost = unit_data['gold']
+    return { 'food' => food_cost, 'gold' => gold_cost } unless kingdom && kingdom['tutorial_mode'].to_s == 'guided'
+
+    {
+      'food' => [(food_cost / 10.0).ceil, 1].max,
+      'gold' => [(gold_cost / 10.0).ceil, 1].max
+    }
+  end
+end
+
 post '/train/:unit_type' do
   require_login!
+  redirect_to = safe_return_path(params[:return_to], '/kingdom')
 
   unit_type = params[:unit_type].to_s
   unless UNIT_ORDER.include?(unit_type)
     set_notice('Unknown unit type.')
-    redirect '/kingdom'
+    redirect redirect_to
   end
 
   kingdom = require_kingdom!
@@ -15,7 +29,7 @@ post '/train/:unit_type' do
   )
   unless unit_row
     set_notice('Unit row not found.')
-    redirect '/kingdom'
+    redirect redirect_to
   end
 
   barracks = db.get_first_row(
@@ -29,15 +43,16 @@ post '/train/:unit_type' do
 
   if barracks_level < required
     set_notice("#{unit_type} requires Barracks level #{required}.")
-    redirect '/kingdom'
+    redirect redirect_to
   end
 
-  food_cost = unit_data['food']
-  gold_cost = unit_data['gold']
+  train_cost = unit_training_cost(unit_data, kingdom)
+  food_cost = train_cost['food']
+  gold_cost = train_cost['gold']
 
   if kingdom['food'] < food_cost || kingdom['gold'] < gold_cost
     set_notice('Not enough food or gold.')
-    redirect '/kingdom'
+    redirect redirect_to
   end
 
   db.execute(
@@ -51,5 +66,5 @@ post '/train/:unit_type' do
   )
 
   set_notice("Trained 1 #{unit_type}.")
-  redirect '/kingdom'
+  redirect redirect_to
 end

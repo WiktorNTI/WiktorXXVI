@@ -12,10 +12,15 @@ module ResourceGeneration
 
     rates = production_rates(db, kingdom_id)
 
-    new_wood = kingdom['wood'] + rates['wood'] * elapsed_minutes
-    new_stone = kingdom['stone'] + rates['stone'] * elapsed_minutes
-    new_food = kingdom['food'] + rates['food'] * elapsed_minutes
-    new_gold = kingdom['gold'] + rates['gold'] * elapsed_minutes
+    wood_now = normalize_amount(kingdom['wood'])
+    stone_now = normalize_amount(kingdom['stone'])
+    food_now = normalize_amount(kingdom['food'])
+    gold_now = normalize_amount(kingdom['gold'])
+
+    new_wood = wood_now + rates['wood'] * elapsed_minutes
+    new_stone = stone_now + rates['stone'] * elapsed_minutes
+    new_food = food_now + rates['food'] * elapsed_minutes
+    new_gold = gold_now + rates['gold'] * elapsed_minutes
     new_tick = last_tick + elapsed_minutes * 60
 
     db.execute(
@@ -26,7 +31,7 @@ module ResourceGeneration
 
   def production_rates(db, kingdom_id)
     kingdom = db.get_first_row(
-      'SELECT population, tax_rate FROM kingdoms WHERE id = ?',
+      'SELECT population, tax_rate, capital_biome FROM kingdoms WHERE id = ?',
       [kingdom_id]
     )
 
@@ -48,11 +53,28 @@ module ResourceGeneration
     tax_gold_rate = (population * tax_rate) / ECONOMY[:tax_divisor]
     gold_rate = base['gold'] + tax_gold_rate
 
+    biome = kingdom ? kingdom['capital_biome'].to_s : ''
+    biome_bonus = CAPITAL_BIOME_BONUSES.fetch(biome, {})
+
+    wood_rate = apply_bonus(wood_rate, biome_bonus['wood'])
+    stone_rate = apply_bonus(stone_rate, biome_bonus['stone'])
+    food_rate = apply_bonus(food_rate, biome_bonus['food'])
+    gold_rate = apply_bonus(gold_rate, biome_bonus['gold'])
+
     {
       'wood' => wood_rate,
       'stone' => stone_rate,
       'food' => food_rate,
       'gold' => gold_rate
     }
+  end
+
+  def apply_bonus(rate, percent_bonus)
+    return rate unless percent_bonus
+    ((rate * (100 + percent_bonus)) / 100.0).round
+  end
+
+  def normalize_amount(value)
+    value.to_f.round
   end
 end

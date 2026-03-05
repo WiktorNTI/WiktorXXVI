@@ -1,5 +1,16 @@
 h1 World Map
 p = "#{kingdom['name']} | Center: (#{cx}, #{cy})"
+p = "Capital biome: #{biome_label(capital_biome)} (#{biome_bonus_text(capital_biome)})" unless capital_biome.to_s.empty?
+- capital_city_id = cities.map { |c| c['id'] }.min
+p = "Cities in this kingdom: #{cities.length}"
+p
+  span.legend-chip
+    span.city-dot.capital C
+    |  = Capital
+    |  |
+    span.city-dot.city O
+    |  = Other city
+
 
 .world-grid
   - (min_y..max_y).each do |y|
@@ -12,7 +23,14 @@ p = "#{kingdom['name']} | Center: (#{cx}, #{cy})"
       - else
         - klass = "tile fog"
 
-      - if visible[[x, y]]
+      - city_here = cities.find { |c| c['tile_x'] == x && c['tile_y'] == y }
+
+      - if visible[[x, y]] && city_here
+        - marker_text = city_here['id'] == capital_city_id ? 'C' : 'O'
+        - marker_class = city_here['id'] == capital_city_id ? 'city-dot capital' : 'city-dot city'
+        a class=klass href="/city/#{city_here['id']}" title=city_here['name']
+          span class=marker_class = marker_text
+      - elsif visible[[x, y]]
         form.map-tile-form method="post" action="/map/center"
           input type="hidden" name="x" value=x
           input type="hidden" name="y" value=y

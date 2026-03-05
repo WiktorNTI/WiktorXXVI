@@ -1,0 +1,71 @@
+.card
+  h1 = city['name']
+  p = "Owner: #{user['username']}"
+  p = "Tile location: (#{city['tile_x']}, #{city['tile_y']})"
+  p
+    a href="/map?cx=#{city['tile_x']}&cy=#{city['tile_y']}" Return to map
+
+- if notice
+  .card
+    p = notice
+
+- if tutorial_completed_now
+  .card
+    p Guided tutorial complete. Continue from Map and City pages.
+
+- if tutorial_mode == 'guided'
+  .card
+    h2 Guided Tutorial
+    p = "Step #{tutorial_step}"
+    p = tutorial_text
+    p Progress is automatic when you complete actions below.
+
+.card
+  h2 Resources
+  ul
+    li
+      | Wood: #{kingdom['wood']}
+      span.rate-inline title=rate_tooltips['wood'] = " (+#{rates_per_hour['wood']}/h)"
+    li
+      | Stone: #{kingdom['stone']}
+      span.rate-inline title=rate_tooltips['stone'] = " (+#{rates_per_hour['stone']}/h)"
+    li
+      | Food: #{kingdom['food']}
+      span.rate-inline title=rate_tooltips['food'] = " (+#{rates_per_hour['food']}/h)"
+    li
+      | Gold: #{kingdom['gold']}
+      span.rate-inline title=rate_tooltips['gold'] = " (+#{rates_per_hour['gold']}/h)"
+
+.card
+  h2 Upgrade buildings
+  - if buildings.empty?
+    p No buildings yet.
+  - else
+    ul
+      - buildings.each do |building|
+        - next_level = building['level'] + 1
+        - cost = building_upgrade_cost(building['name'], next_level, kingdom)
+        li
+          = "#{building['name']} (Level #{building['level']})"
+          |  -> Upgrade cost:
+          = " W #{cost['wood']}, S #{cost['stone']}, F #{cost['food']}, G #{cost['gold']}"
+          form method="post" action="/buildings/#{building['name']}/upgrade" style="display:inline; margin-left:10px;"
+            input type="hidden" name="return_to" value="/city/#{city['id']}"
+            button type="submit" Upgrade
+
+.card
+  h2 Train units
+  - if units.empty?
+    p No units yet.
+  - else
+    ul
+      - units.each do |unit|
+        - unit_data = unit_data_map[unit['unit_type']]
+        - train_cost = unit_data ? unit_training_cost(unit_data, kingdom) : nil
+        li
+          = "#{unit['unit_type']}: #{unit['quantity']}"
+          - if unit_data
+            |  (Cost: Food #{train_cost['food']}, Gold #{train_cost['gold']}, Barracks #{unit_data['required_barracks']}+)
+          form method="post" action="/train/#{unit['unit_type']}" style="display:inline; margin-left:10px;"
+            input type="hidden" name="return_to" value="/city/#{city['id']}"
+            button type="submit" Train 1

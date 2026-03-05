@@ -7,12 +7,14 @@ html
     link rel="stylesheet" href="/styles.css"
   body
     header.topbar
-  .container
-    h1.brand League of Kingdoms 
-    - if current_user
-      a href="/map" Map
-
-
+      .container
+        h1.brand League of Kingdoms
+        - if current_user
+          nav.topnav
+            a href="/kingdom" Kingdom
+            a href="/map" Map
+            form method="post" action="/logout"
+              button type="submit" Logout
 
     main.container
       == yield

@@ -1,8 +1,8 @@
 .card
   h1 = kingdom['name']
   p = "Ruler: #{user['username']}"
-  form method="post" action="/logout"
-  button type="submit" Logout
+  - if capital_biome && !capital_biome.empty?
+    p = "Capital biome: #{biome_label(capital_biome)} (#{biome_bonus_text(capital_biome)})"
 
 
 - if notice
@@ -25,35 +25,9 @@
     | Gold: #{kingdom['gold']}
     span.rate-inline title=rate_tooltips['gold'] = " (+#{rates_per_hour['gold']}/h)"
 
-
-
 .card
-  h2 Buildings
-  - if buildings.empty?
-    p No buildings yet.
-  - else
-    ul
-      - buildings.each do |building|
-        - next_level = building['level'] + 1
-        - cost = building_upgrade_cost(building['name'], next_level)
-        li
-          = "#{building['name']} (Level #{building['level']})"
-          |  -> Upgrade cost:
-          = " W #{cost['wood']}, S #{cost['stone']}, F #{cost['food']}, G #{cost['gold']}"
-          form method="post" action="/buildings/#{building['name']}/upgrade" style="display:inline; margin-left:10px;"
-            button type="submit" Upgrade
-
-.card
-  h2 Units
-  - if units.empty?
-    p No units yet.
-  - else
-    ul
-      - units.each do |unit|
-        - unit_data = unit_data_map[unit['unit_type']]
-        li
-          = "#{unit['unit_type']}: #{unit['quantity']}"
-          - if unit_data
-            |  (Cost: Food #{unit_data['food']}, Gold #{unit_data['gold']}, Barracks #{unit_data['required_barracks']}+)
-          form method="post" action="/train/#{unit['unit_type']}" style="display:inline; margin-left:10px;"
-            button type="submit" Train 1
+  h2 City Actions
+  p Building upgrades and unit training are done inside each city page.
+  p
+    a href="/map" Open map
+    |  and click your capital to manage buildings and units.
