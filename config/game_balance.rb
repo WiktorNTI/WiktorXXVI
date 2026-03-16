@@ -1,5 +1,4 @@
-BUILDING_ORDER = ['Town Hall', 'Farm', 'Barracks', 'Lumberyard', 'Quarry'].freeze
-
+BUILDING_ORDER = ['Town Hall', 'Farm', 'Barracks', 'Lumberyard', 'Quarry']
 
 BUILDING_BASE_COSTS = {
   'Town Hall' => { 'wood' => 120, 'stone' => 120, 'food' => 60, 'gold' => 40 },
@@ -7,24 +6,28 @@ BUILDING_BASE_COSTS = {
   'Barracks' => { 'wood' => 100, 'stone' => 60, 'food' => 80, 'gold' => 45 },
   'Lumberyard' => { 'wood' => 90, 'stone' => 50, 'food' => 40, 'gold' => 30 },
   'Quarry' => { 'wood' => 90, 'stone' => 50, 'food' => 40, 'gold' => 30 }
-}.freeze
+}
 
 UNIT_DATA = {
   'Spearman' => { 'food' => 25, 'gold' => 12, 'required_barracks' => 1 },
   'Archer' => { 'food' => 40, 'gold' => 20, 'required_barracks' => 2 },
   'Cavalry' => { 'food' => 70, 'gold' => 35, 'required_barracks' => 3 }
-}.freeze
+}
 
-UNIT_ORDER = ['Spearman', 'Archer', 'Cavalry'].freeze
+UNIT_ORDER = ['Spearman', 'Archer', 'Cavalry']
 
-CAPITAL_BIOME_ORDER = ['grassland', 'forest', 'mountain', 'desert'].freeze
+CAPITAL_BIOME_ORDER = ['grassland', 'forest', 'mountain', 'desert']
 
 CAPITAL_BIOME_BONUSES = {
   'grassland' => { 'food' => 5 },
   'forest' => { 'wood' => 5 },
   'mountain' => { 'stone' => 5 },
   'desert' => { 'gold' => 5 }
-}.freeze
+}
+
+UNIT_STRENGTH = { 'Spearman' => 1, 'Archer' => 2, 'Cavalry' => 4 }
+
+TRAVEL_MINUTES_PER_TILE = 2
 
 ECONOMY = {
   start_resources: { 'wood' => 180, 'stone' => 180, 'food' => 180, 'gold' => 120 },
@@ -33,4 +36,4 @@ ECONOMY = {
   quarry_stone_bonus: 2,
   farm_food_bonus: 3,
   tax_divisor: 100
-}.freeze
+}

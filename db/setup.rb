@@ -62,6 +62,7 @@ db.execute_batch <<~SQL
     tile_x INTEGER NOT NULL,
     tile_y INTEGER NOT NULL,
     vision_radius INTEGER NOT NULL DEFAULT 3,
+    garrison INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(kingdom_id) REFERENCES kingdoms(id)
   );
 

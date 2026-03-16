@@ -1,7 +1,5 @@
 module ResourceGeneration
-  module_function
-
-  def sync!(db, kingdom_id)
+  def self.sync!(db, kingdom_id)
     kingdom = db.get_first_row('SELECT * FROM kingdoms WHERE id = ?', kingdom_id)
     return unless kingdom
 
@@ -29,18 +27,21 @@ module ResourceGeneration
     )
   end
 
-  def production_rates(db, kingdom_id)
+  def self.production_rates(db, kingdom_id)
     kingdom = db.get_first_row(
       'SELECT population, tax_rate, capital_biome FROM kingdoms WHERE id = ?',
       [kingdom_id]
     )
 
     rows = db.execute('SELECT name, level FROM buildings WHERE kingdom_id = ?', [kingdom_id])
-    levels = rows.each_with_object({}) { |row, memo| memo[row['name']] = row['level'] }
+    levels = {}
+    rows.each do |row|
+      levels[row['name']] = row['level']
+    end
 
-    lumberyard = levels.fetch('Lumberyard', 0)
-    quarry = levels.fetch('Quarry', 0)
-    farm = levels.fetch('Farm', 0)
+    lumberyard = levels['Lumberyard'] || 0
+    quarry = levels['Quarry'] || 0
+    farm = levels['Farm'] || 0
 
     base = ECONOMY[:base_per_minute]
 
@@ -54,7 +55,7 @@ module ResourceGeneration
     gold_rate = base['gold'] + tax_gold_rate
 
     biome = kingdom ? kingdom['capital_biome'].to_s : ''
-    biome_bonus = CAPITAL_BIOME_BONUSES.fetch(biome, {})
+    biome_bonus = CAPITAL_BIOME_BONUSES[biome] || {}
 
     wood_rate = apply_bonus(wood_rate, biome_bonus['wood'])
     stone_rate = apply_bonus(stone_rate, biome_bonus['stone'])
@@ -69,12 +70,12 @@ module ResourceGeneration
     }
   end
 
-  def apply_bonus(rate, percent_bonus)
+  def self.apply_bonus(rate, percent_bonus)
     return rate unless percent_bonus
     ((rate * (100 + percent_bonus)) / 100.0).round
   end
 
-  def normalize_amount(value)
+  def self.normalize_amount(value)
     value.to_f.round
   end
 end

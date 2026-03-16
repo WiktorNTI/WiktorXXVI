@@ -38,7 +38,7 @@ post '/train/:unit_type' do
   )
   barracks_level = barracks ? barracks['level'] : 0
 
-  unit_data = UNIT_DATA.fetch(unit_type)
+  unit_data = UNIT_DATA[unit_type]
   required = unit_data['required_barracks']
 
   if barracks_level < required

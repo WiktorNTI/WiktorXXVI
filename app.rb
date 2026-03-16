@@ -8,23 +8,40 @@ require_relative './config/game_balance'
 require_relative './routes/tutorial_routes'
 require_relative './routes/building_routes'
 require_relative './routes/unit_routes'
+require_relative './routes/expedition_routes'
 require_relative './services/resource_generation'
 
 configure do
   enable :sessions
-  set :session_secret, ENV.fetch('SESSION_SECRET', '67864546578877666777766677656787654567654567654323456789876543456789876543345676787654345678765434567876543456')
+  set :session_secret, '67864546578877666777766677656787654567654567654323456789876543456789876543345676787654345678765434567876543456'
   Database.ensure_schema!
+  Database.ensure_neutral_cities!
 end
 
 helpers do
+  def reset_broken_session!
+    begin
+      session.clear
+    rescue StandardError
+      # Ignore - cookie may be unreadable.
+    end
+    response.delete_cookie('rack.session', path: '/')
+  end
+
   def db
     Database.connection
   end
 
   def current_user
-    return nil unless session[:user_id]
+    user_id = begin
+      session[:user_id]
+    rescue TypeError, ArgumentError
+      reset_broken_session!
+      nil
+    end
+    return nil unless user_id
 
-    @current_user ||= db.get_first_row('SELECT id, username FROM users WHERE id = ?', session[:user_id])
+    @current_user ||= db.get_first_row('SELECT id, username FROM users WHERE id = ?', user_id)
   end
 
   def require_login!
@@ -38,12 +55,25 @@ helpers do
   end 
 
   def set_notice(message)
-    session[:notice] = message
+    begin
+      session[:notice] = message
+    rescue TypeError, ArgumentError
+      reset_broken_session!
+    end
   end
 
   def consume_notice
-    notice = session[:notice]
-    session[:notice] = nil
+    notice = begin
+      session[:notice]
+    rescue TypeError, ArgumentError
+      reset_broken_session!
+      nil
+    end
+    begin
+      session[:notice] = nil
+    rescue TypeError, ArgumentError
+      reset_broken_session!
+    end
     notice
   end
 
@@ -92,6 +122,7 @@ before do
 
   ResourceGeneration.sync!(db, kingdom['id'])
   normalize_kingdom_resources!(kingdom['id'])
+  resolve_arrived_expeditions!(kingdom['id'])
 end
 
 after do
@@ -118,7 +149,7 @@ post '/register' do
   elsif kingdom_name.length < 3
     @error = 'Kingdom name must be at least 3 characters.'
     return slim :register
-  elsif password.length < 5 || password !~ /\A(?=.*[A-Za-z])(?=.*\d).+\z/
+  elsif password.length < 5 || !(password =~ /[A-Za-z]/) || !(password =~ /[0-9]/)
     @error = 'Password must be at least 5 characters and include at least one number and one letter.'
     return slim :register
   end
@@ -167,7 +198,7 @@ post '/login' do
 end
 
 post '/logout' do
-  session.clear
+  reset_broken_session!
   redirect '/'
 end
 
@@ -177,7 +208,10 @@ get '/kingdom' do
 
   rates = ResourceGeneration.production_rates(db, kingdom['id'])
 
-  rates_per_hour = rates.transform_values { |v| v * 60 }
+  rates_per_hour = {}
+  rates.each do |resource, rate|
+    rates_per_hour[resource] = rate * 60
+  end
 
   rate_tooltips = {
     'wood' => "This city: Base 1 + Lumberyard bonus",
@@ -249,12 +283,94 @@ get '/map' do
   explored = {}
   explored_rows.each { |r| explored[[r['x'], r['y']]] = true }
 
+  # Neutral cities in viewport
+  neutral_cities = db.execute(
+    'SELECT id, name, tile_x, tile_y, garrison FROM world_cities WHERE kingdom_id = 0 AND tile_x BETWEEN ? AND ? AND tile_y BETWEEN ? AND ?',
+    [min_x, max_x, min_y, max_y]
+  )
+
+  # Active expeditions — from_x/from_y are stored directly on the row
+  raw_expeditions = db.execute(
+    'SELECT * FROM expeditions WHERE kingdom_id = ?',
+    [kingdom['id']]
+  )
+
+  now = Time.now.to_i
+
+  expedition_markers = {}
+  active_expeditions = []
+
+  raw_expeditions.each do |exp|
+    status = exp['status'].to_s
+
+    if status == 'stationed'
+      cur_x = exp['dest_x']
+      cur_y  = exp['dest_y']
+      arrow  = '⚑'
+    else
+      total   = (exp['arrives_at'] - exp['departed_at']).to_f
+      elapsed = (now - exp['departed_at']).to_f
+      progress = total > 0 ? (elapsed / total).clamp(0.0, 1.0) : 1.0
+
+      cur_x = exp['from_x'] + ((exp['dest_x'] - exp['from_x']) * progress).round
+      cur_y = exp['from_y'] + ((exp['dest_y'] - exp['from_y']) * progress).round
+
+      # Reveal a small area around the army as it moves (3x3)
+      (-1..1).each do |dy2|
+        (-1..1).each do |dx2|
+          db.execute(
+            'INSERT OR IGNORE INTO explored_tiles (kingdom_id, x, y) VALUES (?, ?, ?)',
+            [kingdom['id'], cur_x + dx2, cur_y + dy2]
+          )
+        end
+      end
+
+      dx = exp['dest_x'] - exp['from_x']
+      dy = exp['dest_y'] - exp['from_y']
+      arrow = if dx > 0 && dy < 0 then '↗'
+              elsif dx > 0 && dy > 0 then '↘'
+              elsif dx < 0 && dy > 0 then '↙'
+              elsif dx < 0 && dy < 0 then '↖'
+              elsif dx > 0 then '→'
+              elsif dx < 0 then '←'
+              elsif dy < 0 then '↑'
+              else '↓'
+              end
+    end
+
+    eta_seconds = status == 'stationed' ? 0 : [exp['arrives_at'] - now, 0].max
+    eta_minutes = (eta_seconds / 60.0).ceil
+
+    expedition_markers[[cur_x, cur_y]] ||= []
+    expedition_markers[[cur_x, cur_y]] << {
+      id: exp['id'], arrow: arrow, status: status,
+      dest_x: exp['dest_x'], dest_y: exp['dest_y']
+    }
+
+    active_expeditions << {
+      'id'          => exp['id'],
+      'cur_x'       => cur_x,   'cur_y'    => cur_y,
+      'dest_x'      => exp['dest_x'], 'dest_y' => exp['dest_y'],
+      'eta_minutes' => eta_minutes,
+      'spearman'    => exp['spearman'], 'archer' => exp['archer'], 'cavalry' => exp['cavalry'],
+      'status'      => status
+    }
+  end
+
+  units = db.execute(
+    'SELECT unit_type, quantity FROM units WHERE kingdom_id = ? ORDER BY unit_type ASC',
+    [kingdom['id']]
+  )
 
   slim :map, locals: {
     kingdom: kingdom, cx: cx, cy: cy,
     min_x: min_x, max_x: max_x, min_y: min_y, max_y: max_y,
     tile_map: tile_map, visible: visible, explored: explored, cities: cities,
-    capital_biome: kingdom['capital_biome'].to_s
+    capital_biome: kingdom['capital_biome'].to_s,
+    neutral_cities: neutral_cities,
+    expedition_markers: expedition_markers,
+    active_expeditions: active_expeditions,
+    units: units
   }
 end
 
@@ -287,7 +403,10 @@ get '/city/:id' do
   )
 
   rates = ResourceGeneration.production_rates(db, kingdom['id'])
-  rates_per_hour = rates.transform_values { |v| v * 60 }
+  rates_per_hour = {}
+  rates.each do |resource, rate|
+    rates_per_hour[resource] = rate * 60
+  end
   tutorial_mode = kingdom['tutorial_mode'].to_s
   tutorial_step = kingdom['tutorial_step'].to_i
   tutorial_text = nil

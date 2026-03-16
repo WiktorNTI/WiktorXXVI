@@ -10,6 +10,15 @@ p
     |  |
     span.city-dot.city O
     |  = Other city
+    |  |
+    span.neutral-city-dot N
+    |  = Neutral (claimable)
+    |  |
+    span.army-dot ↗
+    |  = Traveling army
+    |  |
+    span.army-dot.stationed ⚑
+    |  = Stationed army
 
 
 .world-grid
@@ -23,17 +32,94 @@ p
       - else
         - klass = "tile fog"
 
-      - city_here = cities.find { |c| c['tile_x'] == x && c['tile_y'] == y }
+      - city_here    = cities.find { |c| c['tile_x'] == x && c['tile_y'] == y }
+      - neutral_here = neutral_cities.find { |c| c['tile_x'] == x && c['tile_y'] == y }
+      - armies_here  = expedition_markers[[x, y]]
+      - is_target    = active_expeditions.any? { |e| e['status'] != 'stationed' && e['dest_x'] == x && e['dest_y'] == y }
 
       - if visible[[x, y]] && city_here
-        - marker_text = city_here['id'] == capital_city_id ? 'C' : 'O'
+        - marker_text  = city_here['id'] == capital_city_id ? 'C' : 'O'
         - marker_class = city_here['id'] == capital_city_id ? 'city-dot capital' : 'city-dot city'
-        a class=klass href="/city/#{city_here['id']}" title=city_here['name']
+        a class="#{klass}#{is_target ? ' expedition-target' : ''}" href="/city/#{city_here['id']}" title=city_here['name']
           span class=marker_class = marker_text
+      - elsif visible[[x, y]] && neutral_here
+        . class="#{klass}#{is_target ? ' expedition-target' : ''}" title="#{neutral_here['name']} (Garrison: #{neutral_here['garrison']})"
+          span.neutral-city-dot N
+      - elsif visible[[x, y]] && armies_here
+        - army = armies_here.first
+        - dot_class = army[:status] == 'stationed' ? 'army-dot stationed' : 'army-dot'
+        . class="#{klass} army-tile" title="#{army[:status] == 'stationed' ? 'Stationed' : 'Army heading to'} (#{army[:dest_x]}, #{army[:dest_y]})"
+          span class=dot_class = army[:arrow]
       - elsif visible[[x, y]]
         form.map-tile-form method="post" action="/map/center"
           input type="hidden" name="x" value=x
           input type="hidden" name="y" value=y
-          button class=klass type="submit" title="Center on (#{x}, #{y})"
+          button class="#{klass}#{is_target ? ' expedition-target' : ''}" type="submit" title="Center on (#{x}, #{y})"
       - else
-        . class=klass
+        . class="#{klass}#{is_target ? ' expedition-target' : ''}"
+
+- if active_expeditions.any?
+  .card
+    h2 Armies
+    - active_expeditions.each do |exp|
+      .card
+        - if exp['status'] == 'stationed'
+          p
+            strong = "Stationed at (#{exp['dest_x']}, #{exp['dest_y']})"
+          p = "Troops: #{exp['spearman']} Spearman, #{exp['archer']} Archer, #{exp['cavalry']} Cavalry"
+          p
+            strong Redeploy:
+          form method="post" action="/expedition/#{exp['id']}/redeploy" style="display:inline"
+            | Dest X:
+            input type="number" name="dest_x" value="#{exp['dest_x']}" min="0" max="79" style="width:60px"
+            | Y:
+            input type="number" name="dest_y" value="#{exp['dest_y']}" min="0" max="79" style="width:60px"
+            button type="submit" Move
+          |
+          form method="post" action="/expedition/#{exp['id']}/recall" style="display:inline; margin-left:12px"
+            button type="submit" Recall to home city
+        - else
+          - label = exp['status'] == 'recalling' ? 'Returning home' : "Marching to (#{exp['dest_x']}, #{exp['dest_y']})"
+          p
+            strong = label
+          p = "ETA: #{exp['eta_minutes']} min"
+          p = "Troops: #{exp['spearman']} Spearman, #{exp['archer']} Archer, #{exp['cavalry']} Cavalry"
+
+.card
+  h2 Send Expedition
+  p Choose a source city, enter a destination tile, and assign troops.
+  - units_map = {}
+  - units.each { |u| units_map[u['unit_type']] = u['quantity'] }
+  form method="post" action="/expedition/send"
+    p
+      label Source city:
+      |
+      select name="from_city_id"
+        - cities.each do |c|
+          option value=c['id'] = "#{c['name']} (#{c['tile_x']}, #{c['tile_y']})"
+    p
+      label Destination X (0–79):
+      |
+      input type="number" name="dest_x" value=cx min="0" max="79"
+    p
+      label Destination Y (0–79):
+      |
+      input type="number" name="dest_y" value=cy min="0" max="79"
+    p
+      label
+        = "Spearman (you have #{units_map['Spearman'] || 0}, strength 1):"
+      |
+      input type="number" name="spearman" value="0" min="0" max="#{units_map['Spearman'] || 0}"
+    p
+      label
+        = "Archer (you have #{units_map['Archer'] || 0}, strength 2):"
+      |
+      input type="number" name="archer" value="0" min="0" max="#{units_map['Archer'] || 0}"
+    p
+      label
+        = "Cavalry (you have #{units_map['Cavalry'] || 0}, strength 4):"
+      |
+      input type="number" name="cavalry" value="0" min="0" max="#{units_map['Cavalry'] || 0}"
+    p
+      i Neutral cities have garrison 5–20. Strength = (Spearman×1) + (Archer×2) + (Cavalry×4).
+    button type="submit" Send Expedition

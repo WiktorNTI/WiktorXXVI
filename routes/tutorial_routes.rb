@@ -77,7 +77,10 @@ helpers do
 
   def guided_step_from_state(kingdom_id)
     rows = db.execute('SELECT name, level FROM buildings WHERE kingdom_id = ?', [kingdom_id])
-    levels = rows.each_with_object({}) { |row, memo| memo[row['name']] = row['level'].to_i }
+    levels = {}
+    rows.each do |row|
+      levels[row['name']] = row['level'].to_i
+    end
     units = db.get_first_row(
       'SELECT quantity FROM units WHERE kingdom_id = ? AND unit_type = ?',
       [kingdom_id, 'Spearman']

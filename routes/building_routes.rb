@@ -1,11 +1,18 @@
 helpers do
   def building_upgrade_cost(name, next_level, kingdom = nil)
-    base = BUILDING_BASE_COSTS.fetch(name)
-    cost = base.transform_values { |amount| amount * next_level }
+    base = BUILDING_BASE_COSTS[name]
+    cost = {}
+    base.each do |resource, amount|
+      cost[resource] = amount * next_level
+    end
     return cost unless kingdom && kingdom['tutorial_mode'].to_s == 'guided'
     return cost unless next_level == 1
 
-    cost.transform_values { |amount| [(amount / 20.0).ceil, 1].max }
+    discounted = {}
+    cost.each do |resource, amount|
+      discounted[resource] = [(amount / 20.0).ceil, 1].max
+    end
+    discounted
   end
 
   def can_afford?(kingdom, cost)
