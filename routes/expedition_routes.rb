@@ -1,4 +1,80 @@
 helpers do
+  def apply_casualties(spearman, archer, cavalry, survivor_ratio)
+    new_s = (spearman * survivor_ratio).ceil
+    new_a = (archer   * survivor_ratio).ceil
+    new_c = (cavalry  * survivor_ratio).ceil
+    if new_s + new_a + new_c == 0 && spearman + archer + cavalry > 0
+      if cavalry > 0 then new_c = 1
+      elsif archer > 0 then new_a = 1
+      else new_s = 1
+      end
+    end
+    [new_s, new_a, new_c]
+  end
+
+  def initialize_captured_city!(kingdom_id, _city_id)
+    ['Farm', 'Barracks'].each do |b|
+      db.execute('INSERT OR IGNORE INTO buildings (kingdom_id, name, level) VALUES (?, ?, 1)',
+                 [kingdom_id, b])
+    end
+  end
+
+  def resolve_pvp_attack!(attacker_exp, defender_city, attacker_kingdom_id)
+    defender_kingdom_id = defender_city['kingdom_id']
+    dest_x = attacker_exp['dest_x']
+    dest_y  = attacker_exp['dest_y']
+
+    atk_str = attacker_exp['spearman'] * UNIT_STRENGTH['Spearman'] +
+              attacker_exp['archer']   * UNIT_STRENGTH['Archer'] +
+              attacker_exp['cavalry']  * UNIT_STRENGTH['Cavalry']
+
+    stationed_defenders = db.execute(
+      "SELECT * FROM expeditions WHERE kingdom_id = ? AND dest_x = ? AND dest_y = ? AND status = 'stationed'",
+      [defender_kingdom_id, dest_x, dest_y]
+    )
+
+    def_army_str = stationed_defenders.sum do |d|
+      d['spearman'] * UNIT_STRENGTH['Spearman'] +
+      d['archer']   * UNIT_STRENGTH['Archer'] +
+      d['cavalry']  * UNIT_STRENGTH['Cavalry']
+    end
+    def_garrison_str = defender_city['garrison'].to_i
+    def_total_str = def_army_str + def_garrison_str
+
+    city_name = defender_city['name']
+
+    if atk_str >= def_total_str
+      survivor_ratio = def_total_str > 0 ? [[1.0 - (def_total_str.to_f / atk_str), 0.05].max, 1.0].min : 1.0
+      new_s, new_a, new_c = apply_casualties(
+        attacker_exp['spearman'], attacker_exp['archer'], attacker_exp['cavalry'], survivor_ratio
+      )
+
+      stationed_defenders.each { |d| db.execute('DELETE FROM expeditions WHERE id = ?', [d['id']]) }
+
+      db.execute('UPDATE world_cities SET kingdom_id = ? WHERE id = ?', [attacker_kingdom_id, defender_city['id']])
+      initialize_captured_city!(attacker_kingdom_id, defender_city['id'])
+
+      db.execute(
+        "UPDATE expeditions SET spearman = ?, archer = ?, cavalry = ?, status = 'stationed' WHERE id = ?",
+        [new_s, new_a, new_c, attacker_exp['id']]
+      )
+      set_notice("Victory over #{city_name}! City captured. Survivors: #{new_s}S #{new_a}A #{new_c}C.")
+    else
+      db.execute('DELETE FROM expeditions WHERE id = ?', [attacker_exp['id']])
+
+      if def_army_str > 0
+        survivor_ratio = [[1.0 - (atk_str.to_f / def_total_str), 0.05].max, 1.0].min
+        stationed_defenders.each do |d|
+          new_s, new_a, new_c = apply_casualties(d['spearman'], d['archer'], d['cavalry'], survivor_ratio)
+          db.execute('UPDATE expeditions SET spearman = ?, archer = ?, cavalry = ? WHERE id = ?',
+                     [new_s, new_a, new_c, d['id']])
+        end
+      end
+
+      set_notice("Defeat! Your army was destroyed attacking #{city_name}.")
+    end
+  end
+
   def resolve_arrived_expeditions!(kingdom_id)
     now = Time.now.to_i
     arrived = db.execute(
@@ -8,7 +84,6 @@ helpers do
 
     arrived.each do |exp|
       if exp['status'] == 'recalling'
-        # Return troops to the kingdom's unit counts
         db.execute('UPDATE units SET quantity = quantity + ? WHERE kingdom_id = ? AND unit_type = ?', [exp['spearman'], kingdom_id, 'Spearman']) if exp['spearman'] > 0
         db.execute('UPDATE units SET quantity = quantity + ? WHERE kingdom_id = ? AND unit_type = ?', [exp['archer'],   kingdom_id, 'Archer'])   if exp['archer']   > 0
         db.execute('UPDATE units SET quantity = quantity + ? WHERE kingdom_id = ? AND unit_type = ?', [exp['cavalry'],  kingdom_id, 'Cavalry'])  if exp['cavalry']  > 0
@@ -16,7 +91,7 @@ helpers do
         set_notice("Army returned home. Troops restored.")
 
       else
-        # Reveal tiles around destination (7x7 like a city)
+        # Reveal tiles around destination (7x7)
         (-3..3).each do |dy|
           (-3..3).each do |dx|
             db.execute(
@@ -26,30 +101,43 @@ helpers do
           end
         end
 
-        # Check for a neutral city at the destination
-        city = db.get_first_row(
+        strength = exp['spearman'] * UNIT_STRENGTH['Spearman'] +
+                   exp['archer']   * UNIT_STRENGTH['Archer'] +
+                   exp['cavalry']  * UNIT_STRENGTH['Cavalry']
+
+        neutral_city = db.get_first_row(
           'SELECT * FROM world_cities WHERE tile_x = ? AND tile_y = ? AND kingdom_id = 0',
           [exp['dest_x'], exp['dest_y']]
         )
+        enemy_city = db.get_first_row(
+          'SELECT * FROM world_cities WHERE tile_x = ? AND tile_y = ? AND kingdom_id != 0 AND kingdom_id != ?',
+          [exp['dest_x'], exp['dest_y'], kingdom_id]
+        )
 
-        if city
-          strength = exp['spearman'] * UNIT_STRENGTH['Spearman'] +
-                     exp['archer']   * UNIT_STRENGTH['Archer'] +
-                     exp['cavalry']  * UNIT_STRENGTH['Cavalry']
-          garrison = city['garrison'].to_i
-
-          if strength >= garrison
-            db.execute('UPDATE world_cities SET kingdom_id = ? WHERE id = ?', [kingdom_id, city['id']])
-            set_notice("Victory! Captured #{city['name']} (strength: #{strength} vs garrison: #{garrison}). Army is stationed there.")
+        if neutral_city
+          garrison = neutral_city['garrison'].to_i
+          if strength == 0
+            db.execute("UPDATE expeditions SET status = 'stationed' WHERE id = ?", [exp['id']])
+            set_notice("Scout reached #{neutral_city['name']} (Garrison: #{garrison}). Area revealed.")
+          elsif strength >= garrison
+            db.execute('UPDATE world_cities SET kingdom_id = ? WHERE id = ?', [kingdom_id, neutral_city['id']])
+            initialize_captured_city!(kingdom_id, neutral_city['id'])
+            db.execute("UPDATE expeditions SET status = 'stationed' WHERE id = ?", [exp['id']])
+            set_notice("Victory! Captured #{neutral_city['name']} (#{strength} vs garrison #{garrison}). Army stationed.")
           else
-            set_notice("Defeat at #{city['name']} (strength: #{strength} vs garrison: #{garrison}). Army is stationed there.")
+            new_garrison = [garrison - strength, 0].max
+            db.execute('UPDATE world_cities SET garrison = ? WHERE id = ?', [new_garrison, neutral_city['id']])
+            db.execute('DELETE FROM expeditions WHERE id = ?', [exp['id']])
+            set_notice("Defeat at #{neutral_city['name']} (#{strength} vs garrison #{garrison}). Garrison reduced to #{new_garrison}. Army lost.")
           end
-        else
-          set_notice("Army reached (#{exp['dest_x']}, #{exp['dest_y']}). Area explored. Army is stationed.")
-        end
 
-        # Army stays — mark as stationed
-        db.execute("UPDATE expeditions SET status = 'stationed' WHERE id = ?", [exp['id']])
+        elsif enemy_city
+          resolve_pvp_attack!(exp, enemy_city, kingdom_id)
+
+        else
+          db.execute("UPDATE expeditions SET status = 'stationed' WHERE id = ?", [exp['id']])
+          set_notice("Army reached (#{exp['dest_x']}, #{exp['dest_y']}). Area explored. Army stationed.")
+        end
       end
     end
   end
@@ -75,7 +163,8 @@ post '/expedition/send' do
     redirect '/map'
   end
 
-  if sent_spearman + sent_archer + sent_cavalry < 1
+  is_scout = params[:scout].to_s == '1'
+  if !is_scout && sent_spearman + sent_archer + sent_cavalry < 1
     set_notice('You must send at least 1 unit.')
     redirect '/map'
   end
@@ -113,7 +202,8 @@ post '/expedition/send' do
     [kingdom['id'], from_city_id, from_x, from_y, dest_x, dest_y, sent_spearman, sent_archer, sent_cavalry, now, now + dist * TRAVEL_MINUTES_PER_TILE * 60, 'traveling']
   )
 
-  set_notice("Expedition sent to (#{dest_x}, #{dest_y}). Arrives in #{dist * TRAVEL_MINUTES_PER_TILE} min.")
+  label = is_scout ? "Scout sent to (#{dest_x}, #{dest_y})." : "Expedition sent to (#{dest_x}, #{dest_y})."
+  set_notice("#{label} Arrives in #{dist * TRAVEL_MINUTES_PER_TILE} min.")
   redirect "/map?cx=#{from_x}&cy=#{from_y}"
 end
 

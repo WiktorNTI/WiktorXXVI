@@ -289,6 +289,15 @@ get '/map' do
     [min_x, max_x, min_y, max_y]
   )
 
+  # Enemy player cities in viewport (always visible)
+  enemy_cities = db.execute(
+    'SELECT wc.id, wc.name, wc.tile_x, wc.tile_y, k.name AS owner_name
+     FROM world_cities wc JOIN kingdoms k ON k.id = wc.kingdom_id
+     WHERE wc.kingdom_id != 0 AND wc.kingdom_id != ?
+       AND wc.tile_x BETWEEN ? AND ? AND wc.tile_y BETWEEN ? AND ?',
+    [kingdom['id'], min_x, max_x, min_y, max_y]
+  )
+
   # Active expeditions — from_x/from_y are stored directly on the row
   raw_expeditions = db.execute(
     'SELECT * FROM expeditions WHERE kingdom_id = ?',
@@ -368,6 +377,7 @@ get '/map' do
     tile_map: tile_map, visible: visible, explored: explored, cities: cities,
     capital_biome: kingdom['capital_biome'].to_s,
     neutral_cities: neutral_cities,
+    enemy_cities: enemy_cities,
     expedition_markers: expedition_markers,
     active_expeditions: active_expeditions,
     units: units

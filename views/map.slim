@@ -14,6 +14,9 @@ p
     span.neutral-city-dot N
     |  = Neutral (claimable)
     |  |
+    span.enemy-city-dot E
+    |  = Enemy city
+    |  |
     span.army-dot ↗
     |  = Traveling army
     |  |
@@ -34,6 +37,7 @@ p
 
       - city_here    = cities.find { |c| c['tile_x'] == x && c['tile_y'] == y }
       - neutral_here = neutral_cities.find { |c| c['tile_x'] == x && c['tile_y'] == y }
+      - enemy_here   = enemy_cities.find { |c| c['tile_x'] == x && c['tile_y'] == y }
       - armies_here  = expedition_markers[[x, y]]
       - is_target    = active_expeditions.any? { |e| e['status'] != 'stationed' && e['dest_x'] == x && e['dest_y'] == y }
 
@@ -45,16 +49,21 @@ p
       - elsif visible[[x, y]] && neutral_here
         . class="#{klass}#{is_target ? ' expedition-target' : ''}" title="#{neutral_here['name']} (Garrison: #{neutral_here['garrison']})"
           span.neutral-city-dot N
+      - elsif enemy_here
+        - enemy_biome = tile ? tile['biome'] : 'fog'
+        . class="tile #{enemy_biome}#{is_target ? ' expedition-target' : ''}" title="#{enemy_here['name']} (#{enemy_here['owner_name']})"
+          span.enemy-city-dot E
       - elsif visible[[x, y]] && armies_here
         - army = armies_here.first
         - dot_class = army[:status] == 'stationed' ? 'army-dot stationed' : 'army-dot'
         . class="#{klass} army-tile" title="#{army[:status] == 'stationed' ? 'Stationed' : 'Army heading to'} (#{army[:dest_x]}, #{army[:dest_y]})"
           span class=dot_class = army[:arrow]
       - elsif visible[[x, y]]
+        - icon = {'grassland' => '~', 'forest' => '♣', 'mountain' => '▲', 'desert' => '·'}[tile ? tile['biome'] : ''] || ''
         form.map-tile-form method="post" action="/map/center"
           input type="hidden" name="x" value=x
           input type="hidden" name="y" value=y
-          button class="#{klass}#{is_target ? ' expedition-target' : ''}" type="submit" title="Center on (#{x}, #{y})"
+          button class="#{klass}#{is_target ? ' expedition-target' : ''}" type="submit" title="Center on (#{x}, #{y})" = icon
       - else
         . class="#{klass}#{is_target ? ' expedition-target' : ''}"
 
@@ -121,5 +130,26 @@ p
       |
       input type="number" name="cavalry" value="0" min="0" max="#{units_map['Cavalry'] || 0}"
     p
-      i Neutral cities have garrison 5–20. Strength = (Spearman×1) + (Archer×2) + (Cavalry×4).
+      i Neutral cities: garrison 5–20. Enemy cities: defended by garrison + stationed armies. Strength = (Spearman×1) + (Archer×2) + (Cavalry×4).
     button type="submit" Send Expedition
+
+.card
+  h2 Send Scout
+  p Reveal terrain around a destination — no troops required.
+  form method="post" action="/expedition/send"
+    input type="hidden" name="scout" value="1"
+    p
+      label Source city:
+      |
+      select name="from_city_id"
+        - cities.each do |c|
+          option value=c['id'] = "#{c['name']} (#{c['tile_x']}, #{c['tile_y']})"
+    p
+      label Destination X (0–79):
+      |
+      input type="number" name="dest_x" value=cx min="0" max="79"
+    p
+      label Destination Y (0–79):
+      |
+      input type="number" name="dest_y" value=cy min="0" max="79"
+    button type="submit" Send Scout

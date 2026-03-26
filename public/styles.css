@@ -1,145 +1,265 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+
 :root {
-  --bg: #f4f1e8;
-  --panel: #fffaf0;
-  --ink: #2d261f;
-  --muted: #6e6256;
-  --line: #d9ccb8;
-  --accent: #7a4f2b;
-  --accent-2: #9d6b3d;
+  --bg:           #0c0c14;
+  --surface:      #12121e;
+  --panel:        #1a1a28;
+  --panel-raised: #212135;
+  --ink:          #e4d9c2;
+  --muted:        #8a8278;
+  --line:         #2e2d42;
+  --gold:         #c8a84b;
+  --gold-dark:    #7a6128;
+  --gold-light:   #eacb72;
+  --red:          #7a1f1f;
+  --red-light:    #b84040;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: 'Crimson Text', Georgia, serif;
+  font-size: 17px;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 10% 10%, #fff6df 0, transparent 30%),
-    radial-gradient(circle at 90% 0%, #efe2c7 0, transparent 35%),
-    var(--bg);
+  background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 60% 40% at 15% 0%,   #1a1530 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 85% 100%, #120d1a 0%, transparent 60%);
+  min-height: 100vh;
 }
 
+/* ─── HEADER ─────────────────────────────────────────── */
+
 .topbar {
-  border-bottom: 1px solid var(--line);
-  background: #f8edd7;
+  border-bottom: 1px solid var(--gold-dark);
+  background: linear-gradient(180deg, #10101c 0%, #0c0c14 100%);
   padding: 14px 0;
+  box-shadow: 0 2px 24px rgba(0,0,0,0.6);
 }
 
 .container {
-  width: min(960px, 92vw);
+  width: min(1020px, 94vw);
   margin: 0 auto;
 }
 
 .brand {
-  font-size: 1.35rem;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 1.45rem;
+  font-weight: 700;
   margin: 0;
-  letter-spacing: 0.3px;
+  letter-spacing: 3px;
+  color: var(--gold);
+  text-shadow: 0 0 28px rgba(200,168,75,0.45);
 }
 
 main.container {
-  padding: 24px 0 40px;
+  padding: 28px 0 52px;
 }
+
+/* ─── CARDS ──────────────────────────────────────────── */
 
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 14px;
-  box-shadow: 0 2px 0 rgba(0,0,0,0.04);
+  border-radius: 8px;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+  box-shadow: 0 6px 28px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.03);
+  position: relative;
 }
 
-h1, h2 {
+.card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 16px; right: 16px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(200,168,75,0.25), transparent);
+  border-radius: 0;
+}
+
+/* ─── TYPOGRAPHY ─────────────────────────────────────── */
+
+h1 {
+  font-family: 'Cinzel', Georgia, serif;
+  font-weight: 700;
+  color: var(--gold);
   margin-top: 0;
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 32px rgba(200,168,75,0.35);
 }
 
-p {
-  color: var(--muted);
+h2 {
+  font-family: 'Cinzel', Georgia, serif;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--gold-light);
+  margin-top: 0;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  margin-bottom: 16px;
 }
 
-input, button {
-  font: inherit;
+h3 {
+  font-family: 'Cinzel', Georgia, serif;
+  font-weight: 400;
+  font-size: 0.95rem;
+  color: var(--ink);
+  margin-top: 0;
+  letter-spacing: 0.5px;
 }
+
+p { color: var(--muted); line-height: 1.65; }
+
+a {
+  color: var(--gold);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+a:hover {
+  color: var(--gold-light);
+  text-decoration: underline;
+}
+
+/* ─── FORMS ──────────────────────────────────────────── */
+
+input, button { font: inherit; }
 
 input {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 9px 10px;
-  margin: 6px 0 12px;
-  background: #fff;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 5px 0 14px;
+  background: #09090f;
+  color: var(--ink);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--gold-dark);
+  box-shadow: 0 0 0 3px rgba(200,168,75,0.1);
 }
 
 button {
-  border: 0;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  padding: 9px 14px;
+  border: 1px solid var(--gold-dark);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #241a06 0%, #160f02 100%);
+  color: var(--gold);
+  padding: 9px 18px;
   cursor: pointer;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 0.82rem;
+  letter-spacing: 0.8px;
+  transition: all 0.18s;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(200,168,75,0.12);
 }
 
 button:hover {
-  background: var(--accent-2);
+  background: linear-gradient(180deg, #38250a 0%, #241a06 100%);
+  border-color: var(--gold);
+  color: var(--gold-light);
+  box-shadow: 0 4px 18px rgba(200,168,75,0.18), inset 0 1px 0 rgba(200,168,75,0.2);
 }
 
-a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
-}
-
-.rate-inline {
-  margin-left: 6px;
-  color: #7a4f2b;
-  font-weight: 600;
-  cursor: help;
-}
+/* ─── NAV ────────────────────────────────────────────── */
 
 .topnav {
   display: flex;
-  gap: 12px;
+  gap: 2px;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .topnav a {
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 0.8rem;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  transition: all 0.18s;
   font-weight: 600;
 }
 
-.topnav form {
-  margin: 0;
+.topnav a:hover {
+  color: var(--gold);
+  border-color: var(--gold-dark);
+  background: rgba(200,168,75,0.07);
+  text-decoration: none;
 }
+
+.topnav form { margin: 0; }
+
+.topnav form button {
+  font-size: 0.75rem;
+  padding: 6px 12px;
+}
+
+/* ─── RESOURCE RATES ─────────────────────────────────── */
+
+.rate-inline {
+  margin-left: 6px;
+  color: var(--gold);
+  font-weight: 600;
+  cursor: help;
+  font-size: 0.88em;
+  opacity: 0.85;
+}
+
+/* ─── MAP ────────────────────────────────────────────── */
 
 .world-grid {
   display: grid;
-  grid-template-columns: repeat(21, 36px);
-  gap: 4px;
+  grid-template-columns: repeat(21, 38px);
+  grid-auto-rows: 38px;
+  gap: 0;
   margin: 12px 0;
+  padding: 14px;
+  background: #050508;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: inset 0 0 60px rgba(0,0,0,0.7), 0 4px 24px rgba(0,0,0,0.5);
+  overflow-x: auto;
 }
 
 .tile,
 .map-tile-form button.tile {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   padding: 0;
   margin: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   box-sizing: border-box;
-  display: block;
-  line-height: 0;
-  font-size: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  position: relative;
+  overflow: hidden;
+  transition: filter 0.1s;
+}
+
+/* Subtle edge lines baked into each tile — no gap but still distinct */
+.tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-right: 1px solid rgba(0,0,0,0.2);
+  border-bottom: 1px solid rgba(0,0,0,0.2);
+  pointer-events: none;
 }
 
 .map-tile-form {
   margin: 0;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
 }
 
 .map-tile-form button {
@@ -148,92 +268,96 @@ a:hover {
   cursor: pointer;
 }
 
-.tile.fog { background: #1f1f24; }
-.tile.grassland { background: #7fbf6a; }
-.tile.forest { background: #3f8a4b; }
-.tile.mountain { background: #8b8f99; }
-.tile.desert { background: #d8b26e; }
-.tile.dim { filter: grayscale(35%) brightness(0.65); }
-
 .map-tile-form button:hover {
   background: inherit;
 }
 
-.city-dot {
+/* tile biomes — gradient for depth (light top-left, dark bottom-right) */
+.tile.fog       { background: radial-gradient(ellipse at 50% 40%, #101018, #05050a); }
+.tile.grassland { background: linear-gradient(155deg, #4e9a3a, #2e6020); }
+.tile.forest    { background: linear-gradient(155deg, #2a6e30, #163c1a); }
+.tile.mountain  { background: linear-gradient(155deg, #6a6e7a, #383c48); }
+.tile.desert    { background: linear-gradient(155deg, #b08040, #6a4c1e); }
+.tile.dim       { filter: grayscale(55%) brightness(0.5); }
+
+.map-tile-form button.tile:hover { filter: brightness(1.4) !important; }
+
+/* terrain char colour for empty visible tile buttons */
+.map-tile-form button.tile { color: rgba(255,255,255,0.3); font-weight: 700; font-family: monospace; }
+
+/* ─── MAP MARKERS ────────────────────────────────────── */
+
+.city-dot,
+.neutral-city-dot,
+.army-dot,
+.enemy-city-dot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin: 10px;
+  width: 20px;
+  height: 20px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
+  pointer-events: none;
 }
 
 .city-dot.capital {
-  background: #ffd166;
-  border: 1px solid #7a4f2b;
-  color: #3b250f;
+  background: #c8a84b;
+  border: 2px solid #f5e4a0;
+  color: #1a0f00;
+  box-shadow: 0 0 10px rgba(200,168,75,0.75), 0 0 20px rgba(200,168,75,0.3);
 }
 
 .city-dot.city {
-  background: #d9e7ff;
-  border: 1px solid #3a5f99;
-  color: #1f3760;
+  background: #2a5a9a;
+  border: 2px solid #6a9fd8;
+  color: #d8eaff;
+  box-shadow: 0 0 10px rgba(42,90,154,0.75);
 }
 
 .neutral-city-dot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin: 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  background: #e0dbd0;
-  border: 1px solid #888;
-  color: #444;
+  background: #383848;
+  border: 2px solid #666678;
+  color: #aaaacc;
 }
 
 .army-dot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin: 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  background: #ff8c42;
-  border: 1px solid #b85c00;
+  background: #b04000;
+  border: 2px solid #ff7733;
   color: #fff;
+  box-shadow: 0 0 10px rgba(180,64,0,0.75);
 }
 
 .army-dot.stationed {
-  background: #c47a00;
-  border-color: #7a4a00;
+  background: #7a5500;
+  border-color: var(--gold);
+  box-shadow: 0 0 10px rgba(200,168,75,0.5);
+}
+
+.enemy-city-dot {
+  background: #7a1f1f;
+  border: 2px solid #b84040;
+  color: #ffd0d0;
+  box-shadow: 0 0 10px rgba(122,31,31,0.75);
 }
 
 .expedition-target {
-  outline: 2px dashed #ff8c42;
+  outline: 2px dashed #cc5500;
   outline-offset: -2px;
 }
+
+/* ─── LEGEND ─────────────────────────────────────────── */
 
 .legend-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid #d7c2a2;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: #fff4df;
-  color: #5d4326;
+  background: var(--panel-raised);
+  color: var(--muted);
   font-size: 13px;
 }
