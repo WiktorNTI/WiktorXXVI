@@ -1,0 +1,34 @@
+.card
+  h1 Admin Panel
+
+  - if notice
+    p.notice = notice
+
+.card
+  h2 All Users
+  table
+    thead
+      tr
+        th ID
+        th Username
+        th Role
+        th Kingdom
+        th Registered
+        th Actions
+    tbody
+      - users.each do |u|
+        tr
+          td = u['id']
+          td = u['username']
+          td = u['role']
+          td = u['kingdom_name'] || '—'
+          td = Time.at(u['created_at']).strftime('%Y-%m-%d')
+          td
+            - if u['role'] != 'admin'
+              form action="/admin/promote/#{u['id']}" method="post" style="display:inline"
+                button type="submit" Promote to Admin
+            - elsif u['id'] != current_user['id']
+              form action="/admin/demote/#{u['id']}" method="post" style="display:inline"
+                button type="submit" Demote
+            - else
+              | (you)

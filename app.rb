@@ -5,6 +5,14 @@ require 'sinatra/reloader'
 require 'bcrypt'
 require_relative './db/database'
 require_relative './config/game_balance'
+require_relative './models/user'
+require_relative './models/kingdom'
+require_relative './models/building'
+require_relative './models/unit'
+require_relative './models/expedition'
+require_relative './models/world_city'
+require_relative './models/map_tile'
+require_relative './models/login_attempt'
 require_relative './routes/tutorial_routes'
 require_relative './routes/building_routes'
 require_relative './routes/unit_routes'
@@ -41,18 +49,23 @@ helpers do
     end
     return nil unless user_id
 
-    @current_user ||= db.get_first_row('SELECT id, username FROM users WHERE id = ?', user_id)
+    @current_user ||= User.find(db, user_id)
   end
 
   def require_login!
     redirect '/login' unless current_user
   end
 
+  def require_admin!
+    require_login!
+    redirect '/kingdom' unless current_user['role'] == 'admin'
+  end
+
   def require_kingdom!
-    kingdom = db.get_first_row('SELECT * FROM kingdoms WHERE user_id = ?', current_user['id'])
+    kingdom = Kingdom.find_by_user(db, current_user['id'])
     redirect '/login' unless kingdom
     kingdom
-  end 
+  end
 
   def set_notice(message)
     begin
@@ -86,38 +99,28 @@ helpers do
   end
 
   def normalize_kingdom_resources!(kingdom_id)
-    db.execute(
-      'UPDATE kingdoms SET wood = CAST(ROUND(wood) AS INTEGER), stone = CAST(ROUND(stone) AS INTEGER), food = CAST(ROUND(food) AS INTEGER), gold = CAST(ROUND(gold) AS INTEGER) WHERE id = ?',
-      [kingdom_id]
-    )
+    Kingdom.normalize_resources!(db, kingdom_id)
   end
 
   def ensure_capital_city!(kingdom)
-    city = db.get_first_row('SELECT * FROM world_cities WHERE kingdom_id = ? ORDER BY id LIMIT 1', [kingdom['id']])
+    city = WorldCity.capital(db, kingdom['id'])
     return city if city
 
     capital_biome = kingdom['capital_biome'].to_s
     capital_biome = 'grassland' unless CAPITAL_BIOME_BONUSES.key?(capital_biome)
 
-    spawn_tile = db.get_first_row(
-      'SELECT x, y FROM map_tiles WHERE biome = ? ORDER BY RANDOM() LIMIT 1',
-      [capital_biome]
-    )
+    spawn_tile = MapTile.random_of_biome(db, capital_biome)
     spawn_x = spawn_tile ? spawn_tile['x'] : 40
     spawn_y = spawn_tile ? spawn_tile['y'] : 40
 
-    db.execute(
-      'INSERT INTO world_cities (kingdom_id, name, tile_x, tile_y, vision_radius) VALUES (?, ?, ?, ?, ?)',
-      [kingdom['id'], "#{kingdom['name']} Capital", spawn_x, spawn_y, 3]
-    )
-    db.get_first_row('SELECT * FROM world_cities WHERE kingdom_id = ? ORDER BY id LIMIT 1', [kingdom['id']])
+    WorldCity.create!(db, kingdom['id'], "#{kingdom['name']} Capital", spawn_x, spawn_y, 3)
   end
 end
 
 before do
   next unless current_user
 
-  kingdom = db.get_first_row('SELECT id FROM kingdoms WHERE user_id = ?', current_user['id'])
+  kingdom = Kingdom.find_by_user(db, current_user['id'])
   next unless kingdom
 
   ResourceGeneration.sync!(db, kingdom['id'])
@@ -130,18 +133,27 @@ after do
 end
 
 
+# @route GET /
+# @description Landing page. Shows login and register links.
 get '/' do
   slim :home
 end
 
+# @route GET /register
+# @description Displays the registration form.
 get '/register' do
   slim :register
 end
 
+# @route POST /register
+# @description Creates a new user account and kingdom.
+# @param username [String] Minimum 3 characters, must be unique.
+# @param kingdom_name [String] Minimum 3 characters.
+# @param password [String] Minimum 5 characters, must include a letter and a number.
 post '/register' do
-  username = params[:username].to_s.strip
+  username     = params[:username].to_s.strip
   kingdom_name = params[:kingdom_name].to_s.strip
-  password = params[:password].to_s
+  password     = params[:password].to_s
 
   if username.length < 3
     @error = 'Username must be at least 3 characters.'
@@ -155,17 +167,8 @@ post '/register' do
   end
 
   password_hash = BCrypt::Password.create(password).to_s
-  db.execute(
-    'INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)',
-    [username, password_hash, Time.now.to_i]
-  )
-
-  user_id = db.last_insert_row_id
-
-  db.execute(
-    'INSERT INTO kingdoms (user_id, name, wood, stone, food, gold, last_tick_at, tutorial_mode, tutorial_step) VALUES (?, ?, 0, 0, 0, 0, ?, ?, ?)',
-    [user_id, kingdom_name, Time.now.to_i, 'pending', 0]
-  )
+  user_id = User.create!(db, username, password_hash)
+  Kingdom.create!(db, user_id, kingdom_name)
 
   redirect '/login'
 rescue SQLite3::ConstraintException
@@ -173,35 +176,57 @@ rescue SQLite3::ConstraintException
   slim :register
 end
 
+# @route GET /login
+# @description Displays the login form.
 get '/login' do
   slim :login
 end
 
+# @route POST /login
+# @description Authenticates the user. Blocks after 5 failed attempts within 15 minutes.
+# @param username [String]
+# @param password [String]
 post '/login' do
   username = params[:username].to_s.strip
   password = params[:password].to_s
-  user = db.get_first_row('SELECT * FROM users WHERE username = ?', username)
+
+  if LoginAttempt.locked_out?(db, username)
+    secs = LoginAttempt.cooldown_seconds(db, username)
+    mins = (secs / 60.0).ceil
+    @error = "Too many failed attempts. Try again in #{mins} minute(s)."
+    next slim :login
+  end
+
+  user = User.find_by_username(db, username)
 
   if user && BCrypt::Password.new(user['password_hash']) == password
+    LoginAttempt.log!(db, username, true)
     session[:user_id] = user['id']
 
-    kingdom = db.get_first_row('SELECT tutorial_mode FROM kingdoms WHERE user_id = ?', user['id'])
+    kingdom = Kingdom.find_by_user(db, user['id'])
     if kingdom && kingdom['tutorial_mode'] == 'pending'
       redirect '/tutorial/start'
     else
       redirect '/kingdom'
     end
   else
+    LoginAttempt.log!(db, username, false)
     @error = 'Invalid username or password.'
     slim :login
   end
 end
 
+# @route POST /logout
+# @description Clears the session and redirects to home.
+# @requires_login true
 post '/logout' do
   reset_broken_session!
   redirect '/'
 end
 
+# @route GET /kingdom
+# @description Kingdom overview — shows resources, production rates and cities.
+# @requires_login true
 get '/kingdom' do
   require_login!
   kingdom = require_kingdom!
@@ -214,48 +239,44 @@ get '/kingdom' do
   end
 
   rate_tooltips = {
-    'wood' => "This city: Base 1 + Lumberyard bonus",
-    'stone' => "This city: Base 1 + Quarry bonus",
-    'food' => "This city: Base 1 + Farm bonus",
-    'gold' => "This city: Base 1 + Tax"
+    'wood'  => 'This city: Base 1 + Lumberyard bonus',
+    'stone' => 'This city: Base 1 + Quarry bonus',
+    'food'  => 'This city: Base 1 + Farm bonus',
+    'gold'  => 'This city: Base 1 + Tax'
   }
 
-
-
-
-  slim :kingdom, locals: { 
-   kingdom: kingdom, 
-   user: current_user,
-   notice: consume_notice,
-   rates_per_hour: rates_per_hour,
-   rate_tooltips: rate_tooltips,
-   capital_biome: kingdom['capital_biome'].to_s
+  slim :kingdom, locals: {
+    kingdom:       kingdom,
+    user:          current_user,
+    notice:        consume_notice,
+    rates_per_hour: rates_per_hour,
+    rate_tooltips: rate_tooltips,
+    capital_biome: kingdom['capital_biome'].to_s
   }
 end
 
+# @route GET /map
+# @description World map view — renders the visible tile grid, cities, and active expeditions.
+# @param cx [Integer] Center X coordinate (optional, defaults to capital city X).
+# @param cy [Integer] Center Y coordinate (optional, defaults to capital city Y).
+# @requires_login true
 get '/map' do
   require_login!
   kingdom = require_kingdom!
 
   city = ensure_capital_city!(kingdom)
 
-  cx = (params[:cx] || city['tile_x']).to_i
-  cy = (params[:cy] || city['tile_y']).to_i
+  cx   = (params[:cx] || city['tile_x']).to_i
+  cy   = (params[:cy] || city['tile_y']).to_i
   half = 10
   min_x, max_x = cx - half, cx + half
   min_y, max_y = cy - half, cy + half
 
-  tiles = db.execute(
-    'SELECT x, y, biome FROM map_tiles WHERE x BETWEEN ? AND ? AND y BETWEEN ? AND ?',
-    [min_x, max_x, min_y, max_y]
-  )
+  tiles    = MapTile.in_viewport(db, min_x, max_x, min_y, max_y)
   tile_map = {}
   tiles.each { |t| tile_map[[t['x'], t['y']]] = t }
 
-  cities = db.execute(
-    'SELECT id, name, tile_x, tile_y, vision_radius FROM world_cities WHERE kingdom_id = ?',
-    [kingdom['id']]
-  )
+  cities = WorldCity.all_for_kingdom(db, kingdom['id'])
 
   visible = {}
   (min_y..max_y).each do |y|
@@ -269,40 +290,18 @@ get '/map' do
   visible.keys.each do |pos|
     x, y = pos
     next unless visible[[x, y]]
-
-    db.execute(
-      'INSERT OR IGNORE INTO explored_tiles (kingdom_id, x, y) VALUES (?, ?, ?)',
-      [kingdom['id'], x, y]
-    )
+    ExploredTile.add!(db, kingdom['id'], x, y)
   end
 
-  explored_rows = db.execute(
-    'SELECT x, y FROM explored_tiles WHERE kingdom_id = ? AND x BETWEEN ? AND ? AND y BETWEEN ? AND ?',
-    [kingdom['id'], min_x, max_x, min_y, max_y]
-  )
+  # JOIN query: explored_tiles is a many-to-many junction between kingdoms and map_tiles.
+  explored_rows = ExploredTile.in_viewport_with_biome(db, kingdom['id'], min_x, max_x, min_y, max_y)
   explored = {}
   explored_rows.each { |r| explored[[r['x'], r['y']]] = true }
 
-  # Neutral cities in viewport
-  neutral_cities = db.execute(
-    'SELECT id, name, tile_x, tile_y, garrison FROM world_cities WHERE kingdom_id = 0 AND tile_x BETWEEN ? AND ? AND tile_y BETWEEN ? AND ?',
-    [min_x, max_x, min_y, max_y]
-  )
+  neutral_cities = WorldCity.neutral_in_viewport(db, min_x, max_x, min_y, max_y)
+  enemy_cities   = WorldCity.enemy_in_viewport(db, kingdom['id'], min_x, max_x, min_y, max_y)
 
-  # Enemy player cities in viewport (always visible)
-  enemy_cities = db.execute(
-    'SELECT wc.id, wc.name, wc.tile_x, wc.tile_y, k.name AS owner_name
-     FROM world_cities wc JOIN kingdoms k ON k.id = wc.kingdom_id
-     WHERE wc.kingdom_id != 0 AND wc.kingdom_id != ?
-       AND wc.tile_x BETWEEN ? AND ? AND wc.tile_y BETWEEN ? AND ?',
-    [kingdom['id'], min_x, max_x, min_y, max_y]
-  )
-
-  # Active expeditions — from_x/from_y are stored directly on the row
-  raw_expeditions = db.execute(
-    'SELECT * FROM expeditions WHERE kingdom_id = ?',
-    [kingdom['id']]
-  )
+  raw_expeditions = Expedition.all_for_kingdom(db, kingdom['id'])
 
   now = Time.now.to_i
 
@@ -317,25 +316,21 @@ get '/map' do
       cur_y  = exp['dest_y']
       arrow  = '⚑'
     else
-      total   = (exp['arrives_at'] - exp['departed_at']).to_f
-      elapsed = (now - exp['departed_at']).to_f
+      total    = (exp['arrives_at'] - exp['departed_at']).to_f
+      elapsed  = (now - exp['departed_at']).to_f
       progress = total > 0 ? (elapsed / total).clamp(0.0, 1.0) : 1.0
 
       cur_x = exp['from_x'] + ((exp['dest_x'] - exp['from_x']) * progress).round
       cur_y = exp['from_y'] + ((exp['dest_y'] - exp['from_y']) * progress).round
 
-      # Reveal a small area around the army as it moves (3x3)
       (-1..1).each do |dy2|
         (-1..1).each do |dx2|
-          db.execute(
-            'INSERT OR IGNORE INTO explored_tiles (kingdom_id, x, y) VALUES (?, ?, ?)',
-            [kingdom['id'], cur_x + dx2, cur_y + dy2]
-          )
+          ExploredTile.add!(db, kingdom['id'], cur_x + dx2, cur_y + dy2)
         end
       end
 
-      dx = exp['dest_x'] - exp['from_x']
-      dy = exp['dest_y'] - exp['from_y']
+      dx    = exp['dest_x'] - exp['from_x']
+      dy    = exp['dest_y'] - exp['from_y']
       arrow = if dx > 0 && dy < 0 then '↗'
               elsif dx > 0 && dy > 0 then '↘'
               elsif dx < 0 && dy > 0 then '↙'
@@ -366,24 +361,26 @@ get '/map' do
     }
   end
 
-  units = db.execute(
-    'SELECT unit_type, quantity FROM units WHERE kingdom_id = ? ORDER BY unit_type ASC',
-    [kingdom['id']]
-  )
+  units = Unit.all_for_kingdom(db, kingdom['id'])
 
   slim :map, locals: {
     kingdom: kingdom, cx: cx, cy: cy,
     min_x: min_x, max_x: max_x, min_y: min_y, max_y: max_y,
     tile_map: tile_map, visible: visible, explored: explored, cities: cities,
-    capital_biome: kingdom['capital_biome'].to_s,
-    neutral_cities: neutral_cities,
-    enemy_cities: enemy_cities,
+    capital_biome:      kingdom['capital_biome'].to_s,
+    neutral_cities:     neutral_cities,
+    enemy_cities:       enemy_cities,
     expedition_markers: expedition_markers,
     active_expeditions: active_expeditions,
-    units: units
+    units:              units
   }
 end
 
+# @route POST /map/center
+# @description Redirects the map view to center on given coordinates.
+# @param x [Integer] Target X coordinate.
+# @param y [Integer] Target Y coordinate.
+# @requires_login true
 post '/map/center' do
   require_login!
   x = params[:x].to_i
@@ -391,32 +388,27 @@ post '/map/center' do
   redirect "/map?cx=#{x}&cy=#{y}"
 end
 
+# @route GET /city/:id
+# @description City management view — shows buildings, units and tutorial progress.
+# @param id [Integer] The city ID. Must belong to the current user's kingdom.
+# @requires_login true
 get '/city/:id' do
   require_login!
   kingdom = require_kingdom!
   tutorial_completed_now = false
 
-  city = db.get_first_row(
-    'SELECT * FROM world_cities WHERE id = ? AND kingdom_id = ?',
-    [params[:id].to_i, kingdom['id']]
-  )
+  city = WorldCity.find(db, params[:id].to_i, kingdom['id'])
   redirect '/map' unless city
 
-  buildings = db.execute(
-    'SELECT name, level FROM buildings WHERE kingdom_id = ? ORDER BY name ASC',
-    [kingdom['id']]
-  )
-
-  units = db.execute(
-    'SELECT unit_type, quantity FROM units WHERE kingdom_id = ? ORDER BY unit_type ASC',
-    [kingdom['id']]
-  )
+  buildings = Building.all_for_kingdom(db, kingdom['id'])
+  units     = Unit.all_for_kingdom(db, kingdom['id'])
 
   rates = ResourceGeneration.production_rates(db, kingdom['id'])
   rates_per_hour = {}
   rates.each do |resource, rate|
     rates_per_hour[resource] = rate * 60
   end
+
   tutorial_mode = kingdom['tutorial_mode'].to_s
   tutorial_step = kingdom['tutorial_step'].to_i
   tutorial_text = nil
@@ -424,41 +416,65 @@ get '/city/:id' do
   if tutorial_mode == 'guided'
     tutorial_step = guided_step_from_state(kingdom['id'])
     if tutorial_step == 0
-      db.execute(
-        'UPDATE kingdoms SET tutorial_mode = ?, tutorial_step = ? WHERE id = ?',
-        ['done', 0, kingdom['id']]
-      )
-      tutorial_mode = 'done'
+      Kingdom.set_tutorial!(db, kingdom['id'], 'done', 0)
+      tutorial_mode          = 'done'
       tutorial_completed_now = true
     else
-      db.execute(
-        'UPDATE kingdoms SET tutorial_step = ? WHERE id = ?',
-        [tutorial_step, kingdom['id']]
-      )
+      Kingdom.set_tutorial_step!(db, kingdom['id'], tutorial_step)
       tutorial_text = tutorial_step_text(kingdom['name'], tutorial_step)
     end
   end
 
   rate_tooltips = {
-    'wood' => 'City production: Base 1 + Lumberyard bonus',
+    'wood'  => 'City production: Base 1 + Lumberyard bonus',
     'stone' => 'City production: Base 1 + Quarry bonus',
-    'food' => 'City production: Base 1 + Farm bonus',
-    'gold' => 'City production: Base 1 + Tax'
+    'food'  => 'City production: Base 1 + Farm bonus',
+    'gold'  => 'City production: Base 1 + Tax'
   }
 
   slim :city, locals: {
-    kingdom: kingdom,
-    city: city,
-    user: current_user,
-    buildings: buildings,
-    units: units,
-    notice: consume_notice,
-    unit_data_map: UNIT_DATA,
-    rates_per_hour: rates_per_hour,
-    rate_tooltips: rate_tooltips,
-    tutorial_mode: tutorial_mode,
-    tutorial_step: tutorial_step,
-    tutorial_text: tutorial_text,
+    kingdom:               kingdom,
+    city:                  city,
+    user:                  current_user,
+    buildings:             buildings,
+    units:                 units,
+    notice:                consume_notice,
+    unit_data_map:         UNIT_DATA,
+    rates_per_hour:        rates_per_hour,
+    rate_tooltips:         rate_tooltips,
+    tutorial_mode:         tutorial_mode,
+    tutorial_step:         tutorial_step,
+    tutorial_text:         tutorial_text,
     tutorial_completed_now: tutorial_completed_now
   }
+end
+
+# @route GET /admin
+# @description Admin dashboard — lists all users and their kingdoms.
+# @requires_role admin
+get '/admin' do
+  require_admin!
+  users = User.all_with_kingdoms(db)
+  slim :admin, locals: { users: users, notice: consume_notice }
+end
+
+# @route POST /admin/promote/:id
+# @description Promotes a user to admin role.
+# @requires_role admin
+post '/admin/promote/:id' do
+  require_admin!
+  User.set_role!(db, params[:id].to_i, 'admin')
+  set_notice('User promoted to admin.')
+  redirect '/admin'
+end
+
+# @route POST /admin/demote/:id
+# @description Demotes an admin to standard user role.
+# @requires_role admin
+post '/admin/demote/:id' do
+  require_admin!
+  redirect '/admin' if params[:id].to_i == current_user['id']
+  User.set_role!(db, params[:id].to_i, 'user')
+  set_notice('User demoted to standard user.')
+  redirect '/admin'
 end

@@ -13,6 +13,8 @@ html
           nav.topnav
             a href="/kingdom" Kingdom
             a href="/map" Map
+            - if current_user['role'] == 'admin'
+              a href="/admin" Admin
             form method="post" action="/logout"
               button type="submit" Logout
 
