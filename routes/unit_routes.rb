@@ -11,6 +11,11 @@ helpers do
   end
 end
 
+# @route POST /train/:unit_type
+# @description Trains one unit of the given type if the kingdom has enough food and gold.
+# @param unit_type [String] Unit type (must be a valid entry in UNIT_ORDER).
+# @param return_to [String] Optional redirect path after the action.
+# @requires_login true
 post '/train/:unit_type' do
   require_login!
   redirect_to = safe_return_path(params[:return_to], '/kingdom')
@@ -21,25 +26,17 @@ post '/train/:unit_type' do
     redirect redirect_to
   end
 
-  kingdom = require_kingdom!
-
-  unit_row = db.get_first_row(
-    'SELECT id, quantity FROM units WHERE kingdom_id = ? AND unit_type = ?',
-    [kingdom['id'], unit_type]
-  )
+  kingdom  = require_kingdom!
+  unit_row = Unit.find(db, kingdom['id'], unit_type)
   unless unit_row
     set_notice('Unit row not found.')
     redirect redirect_to
   end
 
-  barracks = db.get_first_row(
-    'SELECT level FROM buildings WHERE kingdom_id = ? AND name = ?',
-    [kingdom['id'], 'Barracks']
-  )
+  barracks       = Building.find(db, kingdom['id'], 'Barracks')
   barracks_level = barracks ? barracks['level'] : 0
-
-  unit_data = UNIT_DATA[unit_type]
-  required = unit_data['required_barracks']
+  unit_data      = UNIT_DATA[unit_type]
+  required       = unit_data['required_barracks']
 
   if barracks_level < required
     set_notice("#{unit_type} requires Barracks level #{required}.")
@@ -47,23 +44,16 @@ post '/train/:unit_type' do
   end
 
   train_cost = unit_training_cost(unit_data, kingdom)
-  food_cost = train_cost['food']
-  gold_cost = train_cost['gold']
+  food_cost  = train_cost['food']
+  gold_cost  = train_cost['gold']
 
   if kingdom['food'] < food_cost || kingdom['gold'] < gold_cost
     set_notice('Not enough food or gold.')
     redirect redirect_to
   end
 
-  db.execute(
-    'UPDATE kingdoms SET food = ?, gold = ? WHERE id = ?',
-    [kingdom['food'] - food_cost, kingdom['gold'] - gold_cost, kingdom['id']]
-  )
-
-  db.execute(
-    'UPDATE units SET quantity = ? WHERE id = ?',
-    [unit_row['quantity'] + 1, unit_row['id']]
-  )
+  Kingdom.spend_food_gold!(db, kingdom['id'], kingdom, food_cost, gold_cost)
+  Unit.set_quantity!(db, unit_row['id'], unit_row['quantity'] + 1)
 
   set_notice("Trained 1 #{unit_type}.")
   redirect redirect_to

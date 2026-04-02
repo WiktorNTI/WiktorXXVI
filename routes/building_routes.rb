@@ -18,20 +18,13 @@ helpers do
   def can_afford?(kingdom, cost)
     cost.all? { |resource, amount| kingdom[resource] >= amount }
   end
-
-  def spend_resources!(kingdom_id, kingdom, cost)
-    new_wood = kingdom['wood'] - cost.fetch('wood', 0)
-    new_stone = kingdom['stone'] - cost.fetch('stone', 0)
-    new_food = kingdom['food'] - cost.fetch('food', 0)
-    new_gold = kingdom['gold'] - cost.fetch('gold', 0)
-
-    db.execute(
-      'UPDATE kingdoms SET wood = ?, stone = ?, food = ?, gold = ? WHERE id = ?',
-      [new_wood, new_stone, new_food, new_gold, kingdom_id]
-    )
-  end
 end
 
+# @route POST /buildings/:name/upgrade
+# @description Upgrades a building by one level if the kingdom can afford the cost.
+# @param name [String] Building name (must be a valid entry in BUILDING_ORDER).
+# @param return_to [String] Optional redirect path after the action.
+# @requires_login true
 post '/buildings/:name/upgrade' do
   require_login!
   redirect_to = safe_return_path(params[:return_to], '/kingdom')
@@ -42,47 +35,33 @@ post '/buildings/:name/upgrade' do
     redirect redirect_to
   end
 
-  kingdom = require_kingdom!
-
-  building = db.get_first_row(
-    'SELECT id, level FROM buildings WHERE kingdom_id = ? AND name = ?',
-    [kingdom['id'], name]
-  )
+  kingdom  = require_kingdom!
+  building = Building.find(db, kingdom['id'], name)
   unless building
-  set_notice('Building not found.')
-  redirect redirect_to
+    set_notice('Building not found.')
+    redirect redirect_to
   end
 
   next_level = building['level'] + 1
 
   if name != 'Town Hall'
-    town_hall = db.get_first_row(
-     'SELECT level FROM buildings WHERE kingdom_id = ? AND name = ?',
-     [kingdom['id'], 'Town Hall']
-      )
-     town_hall_level = town_hall ? town_hall['level'] : 0
-
+    town_hall       = Building.find(db, kingdom['id'], 'Town Hall')
+    town_hall_level = town_hall ? town_hall['level'] : 0
     if next_level > town_hall_level + 1
-     set_notice('Upgrade Town Hall first.')
-     redirect redirect_to
+      set_notice('Upgrade Town Hall first.')
+      redirect redirect_to
     end
   end
 
   cost = building_upgrade_cost(name, next_level, kingdom)
-
   unless can_afford?(kingdom, cost)
     set_notice('Not enough resources.')
     redirect redirect_to
   end
 
-  spend_resources!(kingdom['id'], kingdom, cost)
+  Kingdom.spend_resources!(db, kingdom['id'], kingdom, cost)
+  Building.upgrade!(db, building['id'], next_level)
 
-  db.execute(
-    'UPDATE buildings SET level = ? WHERE id = ?',
-    [next_level, building['id']]
-  )
-
-  
   set_notice("#{name} upgraded to level #{next_level}.")
   redirect redirect_to
 end

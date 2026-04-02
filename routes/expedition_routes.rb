@@ -13,10 +13,7 @@ helpers do
   end
 
   def initialize_captured_city!(kingdom_id, _city_id)
-    ['Farm', 'Barracks'].each do |b|
-      db.execute('INSERT OR IGNORE INTO buildings (kingdom_id, name, level) VALUES (?, ?, 1)',
-                 [kingdom_id, b])
-    end
+    Building.create_captured!(db, kingdom_id)
   end
 
   def resolve_pvp_attack!(attacker_exp, defender_city, attacker_kingdom_id)
@@ -28,10 +25,7 @@ helpers do
               attacker_exp['archer']   * UNIT_STRENGTH['Archer'] +
               attacker_exp['cavalry']  * UNIT_STRENGTH['Cavalry']
 
-    stationed_defenders = db.execute(
-      "SELECT * FROM expeditions WHERE kingdom_id = ? AND dest_x = ? AND dest_y = ? AND status = 'stationed'",
-      [defender_kingdom_id, dest_x, dest_y]
-    )
+    stationed_defenders = Expedition.stationed_at(db, defender_kingdom_id, dest_x, dest_y)
 
     def_army_str = stationed_defenders.sum do |d|
       d['spearman'] * UNIT_STRENGTH['Spearman'] +
@@ -39,7 +33,7 @@ helpers do
       d['cavalry']  * UNIT_STRENGTH['Cavalry']
     end
     def_garrison_str = defender_city['garrison'].to_i
-    def_total_str = def_army_str + def_garrison_str
+    def_total_str    = def_army_str + def_garrison_str
 
     city_name = defender_city['name']
 
@@ -49,25 +43,21 @@ helpers do
         attacker_exp['spearman'], attacker_exp['archer'], attacker_exp['cavalry'], survivor_ratio
       )
 
-      stationed_defenders.each { |d| db.execute('DELETE FROM expeditions WHERE id = ?', [d['id']]) }
+      stationed_defenders.each { |d| Expedition.delete!(db, d['id']) }
 
-      db.execute('UPDATE world_cities SET kingdom_id = ? WHERE id = ?', [attacker_kingdom_id, defender_city['id']])
+      WorldCity.capture!(db, defender_city['id'], attacker_kingdom_id)
       initialize_captured_city!(attacker_kingdom_id, defender_city['id'])
+      Expedition.set_stationed!(db, attacker_exp['id'], new_s, new_a, new_c)
 
-      db.execute(
-        "UPDATE expeditions SET spearman = ?, archer = ?, cavalry = ?, status = 'stationed' WHERE id = ?",
-        [new_s, new_a, new_c, attacker_exp['id']]
-      )
       set_notice("Victory over #{city_name}! City captured. Survivors: #{new_s}S #{new_a}A #{new_c}C.")
     else
-      db.execute('DELETE FROM expeditions WHERE id = ?', [attacker_exp['id']])
+      Expedition.delete!(db, attacker_exp['id'])
 
       if def_army_str > 0
         survivor_ratio = [[1.0 - (atk_str.to_f / def_total_str), 0.05].max, 1.0].min
         stationed_defenders.each do |d|
           new_s, new_a, new_c = apply_casualties(d['spearman'], d['archer'], d['cavalry'], survivor_ratio)
-          db.execute('UPDATE expeditions SET spearman = ?, archer = ?, cavalry = ? WHERE id = ?',
-                     [new_s, new_a, new_c, d['id']])
+          Expedition.update_casualties!(db, d['id'], new_s, new_a, new_c)
         end
       end
 
@@ -76,28 +66,22 @@ helpers do
   end
 
   def resolve_arrived_expeditions!(kingdom_id)
-    now = Time.now.to_i
-    arrived = db.execute(
-      "SELECT * FROM expeditions WHERE kingdom_id = ? AND arrives_at <= ? AND status != 'stationed'",
-      [kingdom_id, now]
-    )
+    now     = Time.now.to_i
+    arrived = Expedition.arrived(db, kingdom_id, now)
 
     arrived.each do |exp|
       if exp['status'] == 'recalling'
-        db.execute('UPDATE units SET quantity = quantity + ? WHERE kingdom_id = ? AND unit_type = ?', [exp['spearman'], kingdom_id, 'Spearman']) if exp['spearman'] > 0
-        db.execute('UPDATE units SET quantity = quantity + ? WHERE kingdom_id = ? AND unit_type = ?', [exp['archer'],   kingdom_id, 'Archer'])   if exp['archer']   > 0
-        db.execute('UPDATE units SET quantity = quantity + ? WHERE kingdom_id = ? AND unit_type = ?', [exp['cavalry'],  kingdom_id, 'Cavalry'])  if exp['cavalry']  > 0
-        db.execute('DELETE FROM expeditions WHERE id = ?', [exp['id']])
-        set_notice("Army returned home. Troops restored.")
+        Unit.add!(db, kingdom_id, 'Spearman', exp['spearman']) if exp['spearman'] > 0
+        Unit.add!(db, kingdom_id, 'Archer',   exp['archer'])   if exp['archer']   > 0
+        Unit.add!(db, kingdom_id, 'Cavalry',  exp['cavalry'])  if exp['cavalry']  > 0
+        Expedition.delete!(db, exp['id'])
+        set_notice('Army returned home. Troops restored.')
 
       else
         # Reveal tiles around destination (7x7)
         (-3..3).each do |dy|
           (-3..3).each do |dx|
-            db.execute(
-              'INSERT OR IGNORE INTO explored_tiles (kingdom_id, x, y) VALUES (?, ?, ?)',
-              [kingdom_id, exp['dest_x'] + dx, exp['dest_y'] + dy]
-            )
+            ExploredTile.add!(db, kingdom_id, exp['dest_x'] + dx, exp['dest_y'] + dy)
           end
         end
 
@@ -105,29 +89,23 @@ helpers do
                    exp['archer']   * UNIT_STRENGTH['Archer'] +
                    exp['cavalry']  * UNIT_STRENGTH['Cavalry']
 
-        neutral_city = db.get_first_row(
-          'SELECT * FROM world_cities WHERE tile_x = ? AND tile_y = ? AND kingdom_id = 0',
-          [exp['dest_x'], exp['dest_y']]
-        )
-        enemy_city = db.get_first_row(
-          'SELECT * FROM world_cities WHERE tile_x = ? AND tile_y = ? AND kingdom_id != 0 AND kingdom_id != ?',
-          [exp['dest_x'], exp['dest_y'], kingdom_id]
-        )
+        neutral_city = WorldCity.neutral_at(db, exp['dest_x'], exp['dest_y'])
+        enemy_city   = WorldCity.enemy_at(db, exp['dest_x'], exp['dest_y'], kingdom_id)
 
         if neutral_city
           garrison = neutral_city['garrison'].to_i
           if strength == 0
-            db.execute("UPDATE expeditions SET status = 'stationed' WHERE id = ?", [exp['id']])
+            Expedition.set_stationed!(db, exp['id'])
             set_notice("Scout reached #{neutral_city['name']} (Garrison: #{garrison}). Area revealed.")
           elsif strength >= garrison
-            db.execute('UPDATE world_cities SET kingdom_id = ? WHERE id = ?', [kingdom_id, neutral_city['id']])
+            WorldCity.capture!(db, neutral_city['id'], kingdom_id)
             initialize_captured_city!(kingdom_id, neutral_city['id'])
-            db.execute("UPDATE expeditions SET status = 'stationed' WHERE id = ?", [exp['id']])
+            Expedition.set_stationed!(db, exp['id'])
             set_notice("Victory! Captured #{neutral_city['name']} (#{strength} vs garrison #{garrison}). Army stationed.")
           else
             new_garrison = [garrison - strength, 0].max
-            db.execute('UPDATE world_cities SET garrison = ? WHERE id = ?', [new_garrison, neutral_city['id']])
-            db.execute('DELETE FROM expeditions WHERE id = ?', [exp['id']])
+            WorldCity.update_garrison!(db, neutral_city['id'], new_garrison)
+            Expedition.delete!(db, exp['id'])
             set_notice("Defeat at #{neutral_city['name']} (#{strength} vs garrison #{garrison}). Garrison reduced to #{new_garrison}. Army lost.")
           end
 
@@ -135,7 +113,7 @@ helpers do
           resolve_pvp_attack!(exp, enemy_city, kingdom_id)
 
         else
-          db.execute("UPDATE expeditions SET status = 'stationed' WHERE id = ?", [exp['id']])
+          Expedition.set_stationed!(db, exp['id'])
           set_notice("Army reached (#{exp['dest_x']}, #{exp['dest_y']}). Area explored. Army stationed.")
         end
       end
@@ -143,21 +121,28 @@ helpers do
   end
 end
 
+# @route POST /expedition/send
+# @description Sends an army (or scout) from a city to a destination tile.
+# @param from_city_id [Integer] Source city ID (must belong to the kingdom).
+# @param dest_x [Integer] Destination X coordinate (0–79).
+# @param dest_y [Integer] Destination Y coordinate (0–79).
+# @param spearman [Integer] Number of spearmen to send.
+# @param archer [Integer] Number of archers to send.
+# @param cavalry [Integer] Number of cavalry to send.
+# @param scout [String] Pass "1" to send a zero-unit scout expedition.
+# @requires_login true
 post '/expedition/send' do
   require_login!
   kingdom = require_kingdom!
 
-  from_city_id = params[:from_city_id].to_i
-  dest_x = params[:dest_x].to_i.clamp(0, 79)
-  dest_y = params[:dest_y].to_i.clamp(0, 79)
+  from_city_id  = params[:from_city_id].to_i
+  dest_x        = params[:dest_x].to_i.clamp(0, 79)
+  dest_y        = params[:dest_y].to_i.clamp(0, 79)
   sent_spearman = [params[:spearman].to_i, 0].max
   sent_archer   = [params[:archer].to_i,   0].max
   sent_cavalry  = [params[:cavalry].to_i,  0].max
 
-  source_city = db.get_first_row(
-    'SELECT * FROM world_cities WHERE id = ? AND kingdom_id = ?',
-    [from_city_id, kingdom['id']]
-  )
+  source_city = WorldCity.find(db, from_city_id, kingdom['id'])
   unless source_city
     set_notice('Invalid source city.')
     redirect '/map'
@@ -174,9 +159,9 @@ post '/expedition/send' do
     redirect '/map'
   end
 
-  spearman_row = db.get_first_row('SELECT quantity FROM units WHERE kingdom_id = ? AND unit_type = ?', [kingdom['id'], 'Spearman'])
-  archer_row   = db.get_first_row('SELECT quantity FROM units WHERE kingdom_id = ? AND unit_type = ?', [kingdom['id'], 'Archer'])
-  cavalry_row  = db.get_first_row('SELECT quantity FROM units WHERE kingdom_id = ? AND unit_type = ?', [kingdom['id'], 'Cavalry'])
+  spearman_row = Unit.find(db, kingdom['id'], 'Spearman')
+  archer_row   = Unit.find(db, kingdom['id'], 'Archer')
+  cavalry_row  = Unit.find(db, kingdom['id'], 'Cavalry')
 
   spearman_have = spearman_row ? spearman_row['quantity'] : 0
   archer_have   = archer_row   ? archer_row['quantity']   : 0
@@ -187,19 +172,21 @@ post '/expedition/send' do
     redirect '/map'
   end
 
-  db.execute('UPDATE units SET quantity = quantity - ? WHERE kingdom_id = ? AND unit_type = ?', [sent_spearman, kingdom['id'], 'Spearman']) if sent_spearman > 0
-  db.execute('UPDATE units SET quantity = quantity - ? WHERE kingdom_id = ? AND unit_type = ?', [sent_archer,   kingdom['id'], 'Archer'])   if sent_archer   > 0
-  db.execute('UPDATE units SET quantity = quantity - ? WHERE kingdom_id = ? AND unit_type = ?', [sent_cavalry,  kingdom['id'], 'Cavalry'])  if sent_cavalry  > 0
+  Unit.remove!(db, kingdom['id'], 'Spearman', sent_spearman) if sent_spearman > 0
+  Unit.remove!(db, kingdom['id'], 'Archer',   sent_archer)   if sent_archer   > 0
+  Unit.remove!(db, kingdom['id'], 'Cavalry',  sent_cavalry)  if sent_cavalry  > 0
 
   from_x = source_city['tile_x']
   from_y = source_city['tile_y']
-  dist = [(dest_x - from_x).abs, (dest_y - from_y).abs].max
-  dist = [dist, 1].max
-  now = Time.now.to_i
+  dist   = [(dest_x - from_x).abs, (dest_y - from_y).abs].max
+  dist   = [dist, 1].max
+  now    = Time.now.to_i
 
-  db.execute(
-    'INSERT INTO expeditions (kingdom_id, home_city_id, from_x, from_y, dest_x, dest_y, spearman, archer, cavalry, departed_at, arrives_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [kingdom['id'], from_city_id, from_x, from_y, dest_x, dest_y, sent_spearman, sent_archer, sent_cavalry, now, now + dist * TRAVEL_MINUTES_PER_TILE * 60, 'traveling']
+  Expedition.create!(
+    db, kingdom['id'], from_city_id,
+    from_x, from_y, dest_x, dest_y,
+    sent_spearman, sent_archer, sent_cavalry,
+    now, now + dist * TRAVEL_MINUTES_PER_TILE * 60
   )
 
   label = is_scout ? "Scout sent to (#{dest_x}, #{dest_y})." : "Expedition sent to (#{dest_x}, #{dest_y})."
@@ -207,14 +194,17 @@ post '/expedition/send' do
   redirect "/map?cx=#{from_x}&cy=#{from_y}"
 end
 
+# @route POST /expedition/:id/redeploy
+# @description Moves a stationed army to a new destination tile.
+# @param id [Integer] Expedition ID (must be stationed and belong to the kingdom).
+# @param dest_x [Integer] New destination X coordinate (0–79).
+# @param dest_y [Integer] New destination Y coordinate (0–79).
+# @requires_login true
 post '/expedition/:id/redeploy' do
   require_login!
   kingdom = require_kingdom!
 
-  exp = db.get_first_row(
-    "SELECT * FROM expeditions WHERE id = ? AND kingdom_id = ? AND status = 'stationed'",
-    [params[:id].to_i, kingdom['id']]
-  )
+  exp = Expedition.find_stationed(db, params[:id].to_i, kingdom['id'])
   unless exp
     set_notice('Army not found or not stationed.')
     redirect '/map'
@@ -230,34 +220,33 @@ post '/expedition/:id/redeploy' do
 
   dist = [(new_dest_x - exp['dest_x']).abs, (new_dest_y - exp['dest_y']).abs].max
   dist = [dist, 1].max
-  now = Time.now.to_i
+  now  = Time.now.to_i
 
-  db.execute(
-    "UPDATE expeditions SET from_x = ?, from_y = ?, dest_x = ?, dest_y = ?, departed_at = ?, arrives_at = ?, status = 'traveling' WHERE id = ?",
-    [exp['dest_x'], exp['dest_y'], new_dest_x, new_dest_y, now, now + dist * TRAVEL_MINUTES_PER_TILE * 60, exp['id']]
+  Expedition.redeploy!(
+    db, exp['id'],
+    exp['dest_x'], exp['dest_y'], new_dest_x, new_dest_y,
+    now, now + dist * TRAVEL_MINUTES_PER_TILE * 60
   )
 
   set_notice("Army redeployed to (#{new_dest_x}, #{new_dest_y}). Arrives in #{dist * TRAVEL_MINUTES_PER_TILE} min.")
   redirect '/map'
 end
 
+# @route POST /expedition/:id/recall
+# @description Recalls a stationed army back to its home city.
+# @param id [Integer] Expedition ID (must be stationed and belong to the kingdom).
+# @requires_login true
 post '/expedition/:id/recall' do
   require_login!
   kingdom = require_kingdom!
 
-  exp = db.get_first_row(
-    "SELECT * FROM expeditions WHERE id = ? AND kingdom_id = ? AND status = 'stationed'",
-    [params[:id].to_i, kingdom['id']]
-  )
+  exp = Expedition.find_stationed(db, params[:id].to_i, kingdom['id'])
   unless exp
     set_notice('Army not found or not stationed.')
     redirect '/map'
   end
 
-  home_city = db.get_first_row(
-    'SELECT tile_x, tile_y FROM world_cities WHERE id = ? AND kingdom_id = ?',
-    [exp['home_city_id'], kingdom['id']]
-  )
+  home_city = WorldCity.find(db, exp['home_city_id'], kingdom['id'])
   unless home_city
     set_notice('Home city not found.')
     redirect '/map'
@@ -265,11 +254,12 @@ post '/expedition/:id/recall' do
 
   dist = [(home_city['tile_x'] - exp['dest_x']).abs, (home_city['tile_y'] - exp['dest_y']).abs].max
   dist = [dist, 1].max
-  now = Time.now.to_i
+  now  = Time.now.to_i
 
-  db.execute(
-    "UPDATE expeditions SET from_x = ?, from_y = ?, dest_x = ?, dest_y = ?, departed_at = ?, arrives_at = ?, status = 'recalling' WHERE id = ?",
-    [exp['dest_x'], exp['dest_y'], home_city['tile_x'], home_city['tile_y'], now, now + dist * TRAVEL_MINUTES_PER_TILE * 60, exp['id']]
+  Expedition.recall!(
+    db, exp['id'],
+    exp['dest_x'], exp['dest_y'], home_city['tile_x'], home_city['tile_y'],
+    now, now + dist * TRAVEL_MINUTES_PER_TILE * 60
   )
 
   set_notice("Army is returning home. Arrives in #{dist * TRAVEL_MINUTES_PER_TILE} min.")

@@ -13,47 +13,17 @@ helpers do
 
   def grant_starter_pack!(kingdom_id)
     start = ECONOMY[:start_resources]
-    db.execute(
-      'UPDATE kingdoms SET wood = ?, stone = ?, food = ?, gold = ? WHERE id = ?',
-      [start['wood'], start['stone'], start['food'], start['gold'], kingdom_id]
-    )
-
-    BUILDING_ORDER.each do |name|
-      db.execute(
-        'INSERT OR IGNORE INTO buildings (kingdom_id, name, level) VALUES (?, ?, 1)',
-        [kingdom_id, name]
-      )
-    end
-
-    ['Spearman', 'Archer', 'Cavalry'].each do |unit|
-      db.execute(
-        'INSERT OR IGNORE INTO units (kingdom_id, unit_type, quantity) VALUES (?, ?, 0)',
-        [kingdom_id, unit]
-      )
-    end
+    Kingdom.set_resources!(db, kingdom_id, start['wood'], start['stone'], start['food'], start['gold'])
+    Building.create_all!(db, kingdom_id, BUILDING_ORDER, 1)
+    Unit.create_all!(db, kingdom_id, UNIT_ORDER)
   end
 
   def grant_guided_tutorial_setup!(kingdom_id)
-    db.execute(
-      'UPDATE kingdoms SET wood = ?, stone = ?, food = ?, gold = ? WHERE id = ?',
-      [120, 120, 120, 120, kingdom_id]
-    )
-
-    BUILDING_ORDER.each do |name|
-      db.execute(
-        'INSERT OR IGNORE INTO buildings (kingdom_id, name, level) VALUES (?, ?, 0)',
-        [kingdom_id, name]
-      )
-    end
-    db.execute('UPDATE buildings SET level = 0 WHERE kingdom_id = ?', [kingdom_id])
-
-    UNIT_ORDER.each do |unit|
-      db.execute(
-        'INSERT OR IGNORE INTO units (kingdom_id, unit_type, quantity) VALUES (?, ?, 0)',
-        [kingdom_id, unit]
-      )
-    end
-    db.execute('UPDATE units SET quantity = 0 WHERE kingdom_id = ?', [kingdom_id])
+    Kingdom.set_resources!(db, kingdom_id, 120, 120, 120, 120)
+    Building.create_all!(db, kingdom_id, BUILDING_ORDER, 0)
+    Building.set_all_level!(db, kingdom_id, 0)
+    Unit.create_all!(db, kingdom_id, UNIT_ORDER)
+    Unit.reset_all!(db, kingdom_id)
   end
 
   def tutorial_step_text(kingdom_name, step)
@@ -76,16 +46,12 @@ helpers do
   end
 
   def guided_step_from_state(kingdom_id)
-    rows = db.execute('SELECT name, level FROM buildings WHERE kingdom_id = ?', [kingdom_id])
+    rows   = Building.all_for_kingdom(db, kingdom_id)
     levels = {}
-    rows.each do |row|
-      levels[row['name']] = row['level'].to_i
-    end
-    units = db.get_first_row(
-      'SELECT quantity FROM units WHERE kingdom_id = ? AND unit_type = ?',
-      [kingdom_id, 'Spearman']
-    )
-    spearman_count = units ? units['quantity'].to_i : 0
+    rows.each { |row| levels[row['name']] = row['level'].to_i }
+
+    spearman_row   = Unit.find(db, kingdom_id, 'Spearman')
+    spearman_count = spearman_row ? spearman_row['quantity'].to_i : 0
 
     return 1 if levels.fetch('Town Hall', 0) < 1
     return 2 if levels.fetch('Farm', 0) < 1
@@ -98,17 +64,26 @@ helpers do
   end
 end
 
+# @route GET /tutorial/start
+# @description Displays the tutorial start screen for biome and mode selection.
+# @requires_login true
 get '/tutorial/start' do
   require_login!
   slim :tutorial_start, locals: { notice: consume_notice }
 end
 
+# @route POST /tutorial/choice
+# @description Saves the chosen capital biome and tutorial mode, then starts the game.
+# @param choice [String] "yes" for guided tutorial, any other value for freeplay.
+# @param biome [String] Capital biome (grassland, forest, mountain, or desert).
+# @requires_login true
 post '/tutorial/choice' do
   require_login!
 
-  choice = params[:choice].to_s
-  biome = params[:biome].to_s
+  choice  = params[:choice].to_s
+  biome   = params[:biome].to_s
   kingdom = require_kingdom!
+
   unless CAPITAL_BIOME_BONUSES.key?(biome)
     set_notice('Pick a capital biome before continuing.')
     redirect '/tutorial/start'
@@ -116,32 +91,31 @@ post '/tutorial/choice' do
 
   if choice == 'yes'
     grant_guided_tutorial_setup!(kingdom['id'])
-    db.execute(
-      'UPDATE kingdoms SET tutorial_mode = ?, tutorial_step = ?, capital_biome = ? WHERE id = ?',
-      ['guided', 1, biome, kingdom['id']]
-    )
+    Kingdom.set_tutorial_with_biome!(db, kingdom['id'], 'guided', 1, biome)
     set_notice("Capital biome set to #{biome_label(biome)} (#{biome_bonus_text(biome)}).")
     city = ensure_capital_city!(kingdom)
     redirect "/city/#{city['id']}"
   else
     grant_starter_pack!(kingdom['id'])
-    db.execute(
-      'UPDATE kingdoms SET tutorial_mode = ?, tutorial_step = ?, capital_biome = ? WHERE id = ?',
-      ['done', 0, biome, kingdom['id']]
-    )
+    Kingdom.set_tutorial_with_biome!(db, kingdom['id'], 'done', 0, biome)
     set_notice("Capital biome set to #{biome_label(biome)} (#{biome_bonus_text(biome)}).")
     redirect '/kingdom'
   end
 end
 
+# @route GET /tutorial
+# @description Redirects to the kingdom overview (tutorial is managed inline).
 get '/tutorial' do
   redirect '/kingdom'
 end
 
+# @route POST /tutorial/next
+# @description Redirects the player to their capital city to continue the guided tutorial.
+# @requires_login true
 post '/tutorial/next' do
   require_login!
   kingdom = require_kingdom!
-  city = ensure_capital_city!(kingdom)
+  city    = ensure_capital_city!(kingdom)
   set_notice('Use the real building and unit buttons in the city page to progress tutorial steps.')
   redirect "/city/#{city['id']}"
 end
