@@ -13,6 +13,7 @@
         th Username
         th Role
         th Kingdom
+        th Resources
         th Registered
         th Actions
     tbody
@@ -22,8 +23,22 @@
           td = u['username']
           td = u['role']
           td = u['kingdom_name'] || '—'
-          td = Time.at(u['created_at']).strftime('%Y-%m-%d')
           td
+            - if u['kingdom_id']
+              form action="/admin/kingdom/#{u['kingdom_id']}/resources" method="post" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"
+                label Wood
+                input type="number" name="wood"  value="#{u['wood']}"  style="width:55px"
+                label Stone
+                input type="number" name="stone" value="#{u['stone']}" style="width:55px"
+                label Food
+                input type="number" name="food"  value="#{u['food']}"  style="width:55px"
+                label Gold
+                input type="number" name="gold"  value="#{u['gold']}"  style="width:55px"
+                button type="submit" Save
+            - else
+              | —
+          td = Time.at(u['created_at']).strftime('%Y-%m-%d')
+          td style="display:flex;gap:4px"
             - if u['role'] != 'admin'
               form action="/admin/promote/#{u['id']}" method="post" style="display:inline"
                 button type="submit" Promote to Admin
@@ -31,4 +46,7 @@
               form action="/admin/demote/#{u['id']}" method="post" style="display:inline"
                 button type="submit" Demote
             - else
-              | (you)
+              | (you)&nbsp;
+            - if u['id'] != current_user['id'] && u['role'] != 'admin'
+              form action="/admin/delete/#{u['id']}" method="post" style="display:inline" onsubmit="return confirm('Delete #{u['username']}? This cannot be undone.')"
+                button type="submit" style="color:red" Delete

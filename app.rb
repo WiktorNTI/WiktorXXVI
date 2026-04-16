@@ -478,3 +478,33 @@ post '/admin/demote/:id' do
   set_notice('User demoted to standard user.')
   redirect '/admin'
 end
+
+# @route POST /admin/delete/:id
+# @description Deletes a user account and all associated data.
+# @requires_role admin
+post '/admin/delete/:id' do
+  require_admin!
+  target_id = params[:id].to_i
+  redirect '/admin' if target_id == current_user['id']
+  target = User.find(db, target_id)
+  redirect '/admin' unless target
+  redirect '/admin' if target['role'] == 'admin'
+  User.delete!(db, target_id)
+  set_notice("Account '#{target['username']}' deleted.")
+  redirect '/admin'
+end
+
+# @route POST /admin/kingdom/:id/resources
+# @description Sets a kingdom's resources directly.
+# @requires_role admin
+post '/admin/kingdom/:id/resources' do
+  require_admin!
+  kingdom_id = params[:id].to_i
+  wood  = params[:wood].to_i
+  stone = params[:stone].to_i
+  food  = params[:food].to_i
+  gold  = params[:gold].to_i
+  Kingdom.set_resources!(db, kingdom_id, wood, stone, food, gold)
+  set_notice('Kingdom resources updated.')
+  redirect '/admin'
+end
